@@ -35,7 +35,11 @@ const billboardProfiles = {
     width: 160,
     height: 320,
     maxSizeMB: 25,
-    allowedTypes: ["image/jpeg", "image/png", "image/bmp"]
+    allowedTypes: ["image/jpeg", "image/png", "image/bmp"],
+    filenameRules: {
+      disallowedCharacters: /[^a-zA-Z0-9\s.]/g,
+      note: "Avoid special characters (!@#$%^&* etc). Use only letters, numbers, spaces, and standard file extensions like .jpg"
+    }
   }
 };
 
@@ -48,14 +52,12 @@ export default function Home() {
   const validateFile = async (file, specs) => {
     if (!file) return;
 
-    // Check file type
     if (!specs.allowedTypes.includes(file.type)) {
       setIsValid(false);
       setValidationMessage("Invalid file type.");
       return;
     }
 
-    // Check file size
     const fileSizeMB = file.size / (1024 * 1024);
     if (fileSizeMB > specs.maxSizeMB) {
       setIsValid(false);
@@ -63,15 +65,18 @@ export default function Home() {
       return;
     }
 
-    // Check image dimensions
+    if (selectedBoard === "digital_17x8" && file.name.match(billboardProfiles[selectedBoard].filenameRules.disallowedCharacters)) {
+      setIsValid(false);
+      setValidationMessage("Filename contains invalid characters.");
+      return;
+    }
+
     const img = new Image();
     img.src = URL.createObjectURL(file);
     img.onload = () => {
       if (img.width !== specs.width || img.height !== specs.height) {
         setIsValid(false);
-        setValidationMessage(
-          `Image must be ${specs.width}x${specs.height}px. Uploaded image is ${img.width}x${img.height}px.`
-        );
+        setValidationMessage(`Image must be ${specs.width}x${specs.height}px. Uploaded image is ${img.width}x${img.height}px.`);
       } else {
         setIsValid(true);
         setValidationMessage("File is valid and ready to submit.");
@@ -86,6 +91,15 @@ export default function Home() {
     validateFile(uploadedFile, specs);
   };
 
+  const clearSelection = () => {
+    setFile(null);
+    setIsValid(false);
+    setValidationMessage("");
+    document.getElementById("fileInput").value = null;
+  };
+
+  const specs = billboardProfiles[selectedBoard];
+
   return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
       <img src="/AdVisionAI.svg" alt="AdVisionAI Logo" className="w-48 h-auto mb-4" />
@@ -95,23 +109,41 @@ export default function Home() {
       <select
         className="mb-4 border rounded px-4 py-2"
         value={selectedBoard}
-        onChange={(e) => setSelectedBoard(e.target.value)}
+        onChange={(e) => {
+          setSelectedBoard(e.target.value);
+          clearSelection();
+        }}
       >
         {Object.entries(billboardProfiles).map(([key, profile]) => (
           <option key={key} value={key}>{profile.name}</option>
         ))}
       </select>
 
-      <input type="file" className="mb-4" onChange={handleFileChange} />
+      <div className="mb-4 text-sm text-gray-600 text-center">
+        <p><strong>Required Dimensions:</strong> {specs.width}x{specs.height}px</p>
+        <p><strong>Max File Size:</strong> {specs.maxSizeMB}MB</p>
+        <p><strong>Allowed File Types:</strong> {specs.allowedTypes.join(', ').replace(/image\//g, '').toUpperCase()}</p>
+        {selectedBoard === "digital_17x8" && <p><strong>Filename Note:</strong> {specs.filenameRules.note}</p>}
+      </div>
+
+      <input id="fileInput" type="file" className="mb-4" onChange={handleFileChange} />
       {validationMessage && (
         <p className={`mb-2 ${isValid ? "text-green-600" : "text-red-600"}`}>{validationMessage}</p>
       )}
-      <button
-        disabled={!isValid}
-        className={`px-4 py-2 rounded text-white ${isValid ? "bg-blue-600" : "bg-gray-400 cursor-not-allowed"}`}
-      >
-        Approve & Submit
-      </button>
+      <div className="flex gap-4">
+        <button
+          disabled={!isValid}
+          className={`px-4 py-2 rounded text-white ${isValid ? "bg-blue-600" : "bg-gray-400 cursor-not-allowed"}`}
+        >
+          Approve & Submit
+        </button>
+        <button
+          onClick={clearSelection}
+          className="px-4 py-2 rounded text-white bg-red-500"
+        >
+          Clear
+        </button>
+      </div>
     </div>
   );
 }
