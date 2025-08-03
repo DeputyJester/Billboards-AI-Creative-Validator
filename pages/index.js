@@ -1,4 +1,3 @@
-// pages/index.js
 import { useState } from 'react';
 
 const billboardProfiles = {
@@ -150,6 +149,17 @@ export default function Home() {
       )}
 
       <input id="fileInput" type="file" className="mb-4" onChange={handleFileChange} />
+
+      {file && (
+        <div className="mb-4">
+          <p className="text-sm text-gray-700 text-center mb-2">Preview:</p>
+          <img
+            src={URL.createObjectURL(file)}
+            alt="Preview"
+            className="max-w-full max-h-64 mx-auto border rounded"
+          />
+        </div>
+      )}
 
       {validationMessage && (
         <p className={`mb-2 ${isValid ? "text-green-600" : "text-red-600"}`}>
