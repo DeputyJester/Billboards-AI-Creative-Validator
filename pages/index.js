@@ -38,7 +38,7 @@ const billboardProfiles = {
     allowedTypes: ["image/jpeg", "image/png", "image/bmp"],
     filenameRules: {
       disallowedCharacters: /[^a-zA-Z0-9\s.]/g,
-      note: "Avoid special characters (!@#$%^&* etc). Use only letters, numbers, spaces, and standard file extensions like .jpg"
+      note: "Avoid special characters (!@#$%^&* etc). Use only letters, numbers, spaces, and .jpg"
     }
   }
 };
@@ -50,7 +50,7 @@ export default function Home() {
   const [validationMessage, setValidationMessage] = useState("");
 
   const validateFile = async (file, specs) => {
-    if (!file) return;
+    if (!file || !specs) return;
 
     if (!specs.allowedTypes.includes(file.type)) {
       setIsValid(false);
@@ -65,7 +65,10 @@ export default function Home() {
       return;
     }
 
-    if (selectedBoard === "digital_17x8" && file.name.match(billboardProfiles[selectedBoard].filenameRules.disallowedCharacters)) {
+    if (
+      selectedBoard === "digital_17x8" &&
+      file.name.match(billboardProfiles[selectedBoard].filenameRules.disallowedCharacters)
+    ) {
       setIsValid(false);
       setValidationMessage("Filename contains invalid characters.");
       return;
@@ -76,7 +79,9 @@ export default function Home() {
     img.onload = () => {
       if (img.width !== specs.width || img.height !== specs.height) {
         setIsValid(false);
-        setValidationMessage(`Image must be ${specs.width}x${specs.height}px. Uploaded image is ${img.width}x${img.height}px.`);
+        setValidationMessage(
+          `Image must be ${specs.width}x${specs.height}px. Uploaded image is ${img.width}x${img.height}px.`
+        );
       } else {
         setIsValid(true);
         setValidationMessage("File is valid and ready to submit.");
@@ -87,7 +92,7 @@ export default function Home() {
   const handleFileChange = (e) => {
     const uploadedFile = e.target.files[0];
     setFile(uploadedFile);
-    const specs = selectedBoard ? billboardProfiles[selectedBoard] : null;
+    const specs = billboardProfiles[selectedBoard];
     validateFile(uploadedFile, specs);
   };
 
@@ -98,7 +103,7 @@ export default function Home() {
     document.getElementById("fileInput").value = null;
   };
 
-  const specs = billboardProfiles[selectedBoard];
+  const specs = selectedBoard ? billboardProfiles[selectedBoard] : null;
 
   return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
@@ -114,30 +119,50 @@ export default function Home() {
           clearSelection();
         }}
       >
-        <option value="" disabled>Select a Billboard Type</option>
-      >
+        <option value="" disabled>
+          Select a Billboard Type
+        </option>
         {Object.entries(billboardProfiles).map(([key, profile]) => (
-          <option key={key} value={key}>{profile.name}</option>
+          <option key={key} value={key}>
+            {profile.name}
+          </option>
         ))}
       </select>
 
       {specs && (
         <div className="mb-4 text-sm text-gray-600 text-center">
-          <p><strong>Required Dimensions:</strong> {specs.width}x{specs.height}px</p>
-          <p><strong>Max File Size:</strong> {specs.maxSizeMB}MB</p>
-          <p><strong>Allowed File Types:</strong> {specs.allowedTypes.join(', ').replace(/image\//g, '').toUpperCase()}</p>
-          {selectedBoard === "digital_17x8" && <p><strong>Filename Note:</strong> {specs.filenameRules.note}</p>}
+          <p>
+            <strong>Required Dimensions:</strong> {specs.width}x{specs.height}px
+          </p>
+          <p>
+            <strong>Max File Size:</strong> {specs.maxSizeMB}MB
+          </p>
+          <p>
+            <strong>Allowed File Types:</strong>{" "}
+            {specs.allowedTypes.join(", ").replace(/image\//g, "").toUpperCase()}
+          </p>
+          {selectedBoard === "digital_17x8" && (
+            <p>
+              <strong>Filename Note:</strong> {specs.filenameRules.note}
+            </p>
+          )}
         </div>
       )}
 
       <input id="fileInput" type="file" className="mb-4" onChange={handleFileChange} />
+
       {validationMessage && (
-        <p className={`mb-2 ${isValid ? "text-green-600" : "text-red-600"}`}>{validationMessage}</p>
+        <p className={`mb-2 ${isValid ? "text-green-600" : "text-red-600"}`}>
+          {validationMessage}
+        </p>
       )}
+
       <div className="flex gap-4">
         <button
           disabled={!isValid}
-          className={`px-4 py-2 rounded text-white ${isValid ? "bg-blue-600" : "bg-gray-400 cursor-not-allowed"}`}
+          className={`px-4 py-2 rounded text-white ${
+            isValid ? "bg-blue-600" : "bg-gray-400 cursor-not-allowed"
+          }`}
         >
           Approve & Submit
         </button>
