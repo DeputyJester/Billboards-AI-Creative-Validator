@@ -96,6 +96,7 @@ export default function Home() {
   };
 
   const clearSelection = () => {
+    setSelectedBoard("");
     setFile(null);
     setIsValid(false);
     setValidationMessage("");
@@ -115,7 +116,10 @@ export default function Home() {
         value={selectedBoard}
         onChange={(e) => {
           setSelectedBoard(e.target.value);
-          clearSelection();
+          setFile(null);
+          setIsValid(false);
+          setValidationMessage("");
+          document.getElementById("fileInput").value = null;
         }}
       >
         <option value="" disabled>
