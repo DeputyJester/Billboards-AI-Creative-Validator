@@ -44,7 +44,7 @@ const billboardProfiles = {
 };
 
 export default function Home() {
-  const [selectedBoard, setSelectedBoard] = useState("digital_14x48");
+  const [selectedBoard, setSelectedBoard] = useState("");
   const [file, setFile] = useState(null);
   const [isValid, setIsValid] = useState(false);
   const [validationMessage, setValidationMessage] = useState("");
@@ -87,7 +87,7 @@ export default function Home() {
   const handleFileChange = (e) => {
     const uploadedFile = e.target.files[0];
     setFile(uploadedFile);
-    const specs = billboardProfiles[selectedBoard];
+    const specs = selectedBoard ? billboardProfiles[selectedBoard] : null;
     validateFile(uploadedFile, specs);
   };
 
@@ -114,17 +114,21 @@ export default function Home() {
           clearSelection();
         }}
       >
+        <option value="" disabled>Select a Billboard Type</option>
+      >
         {Object.entries(billboardProfiles).map(([key, profile]) => (
           <option key={key} value={key}>{profile.name}</option>
         ))}
       </select>
 
-      <div className="mb-4 text-sm text-gray-600 text-center">
-        <p><strong>Required Dimensions:</strong> {specs.width}x{specs.height}px</p>
-        <p><strong>Max File Size:</strong> {specs.maxSizeMB}MB</p>
-        <p><strong>Allowed File Types:</strong> {specs.allowedTypes.join(', ').replace(/image\//g, '').toUpperCase()}</p>
-        {selectedBoard === "digital_17x8" && <p><strong>Filename Note:</strong> {specs.filenameRules.note}</p>}
-      </div>
+      {specs && (
+        <div className="mb-4 text-sm text-gray-600 text-center">
+          <p><strong>Required Dimensions:</strong> {specs.width}x{specs.height}px</p>
+          <p><strong>Max File Size:</strong> {specs.maxSizeMB}MB</p>
+          <p><strong>Allowed File Types:</strong> {specs.allowedTypes.join(', ').replace(/image\//g, '').toUpperCase()}</p>
+          {selectedBoard === "digital_17x8" && <p><strong>Filename Note:</strong> {specs.filenameRules.note}</p>}
+        </div>
+      )}
 
       <input id="fileInput" type="file" className="mb-4" onChange={handleFileChange} />
       {validationMessage && (
