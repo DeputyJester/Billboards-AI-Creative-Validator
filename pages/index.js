@@ -1,7 +1,7 @@
 export default function Home() {
   return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
-      <img src="/AdVisionAI.svg" alt="AdVisionAI Logo" className="w-48 h-auto mx-auto" />
+      <img src="/AdVisionAI-logo.svg" alt="AdVisionAI Logo" className="w-48 h-auto mx-auto" />
       <h1 className="text-4xl font-bold mb-4">AdVisionAI</h1>
       <h2 className="text-xl font-semibold mb-6">Upload Your Billboard Artwork</h2>
       <input type="file" className="mb-4" />
