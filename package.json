@@ -7,10 +7,10 @@
     "start": "next start"
   },
   "dependencies": {
-    "next": "13.4.12",
+    "next": "^15.4.5",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "resend": "^0.9.0"
+    "resend": "^4.7.0"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.14",
