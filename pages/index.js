@@ -1,186 +1,188 @@
 import { useState } from 'react';
-import Image from 'next/image';
+
+const billboardProfiles = {
+  digital_14x48: {
+    name: "14x48 Digital Billboard",
+    width: 858,
+    height: 242,
+    maxSizeMB: 25,
+    allowedTypes: ["image/jpeg", "image/png", "image/bmp"]
+  },
+  digital_17x29: {
+    name: "17x29 Digital Billboard",
+    width: 576,
+    height: 336,
+    maxSizeMB: 25,
+    allowedTypes: ["image/jpeg", "image/png", "image/bmp"]
+  },
+  digital_20x10: {
+    name: "20x10 Digital Billboard",
+    width: 288,
+    height: 576,
+    maxSizeMB: 25,
+    allowedTypes: ["image/jpeg", "image/png", "image/bmp"]
+  },
+  digital_12x27: {
+    name: "12x27 Digital Billboard",
+    width: 832,
+    height: 368,
+    maxSizeMB: 25,
+    allowedTypes: ["image/jpeg", "image/png", "image/bmp"]
+  },
+  digital_17x8: {
+    name: "17x8 Digital Billboard",
+    width: 160,
+    height: 320,
+    maxSizeMB: 25,
+    allowedTypes: ["image/jpeg", "image/png", "image/bmp"],
+    filenameRules: {
+      disallowedCharacters: /[^a-zA-Z0-9\s.]/g,
+      note: "Avoid special characters (!@#$%^&* etc). Use only letters, numbers, spaces, and .jpg"
+    }
+  }
+};
 
 export default function Home() {
-  const [selectedBoard, setSelectedBoard] = useState('');
+  const [selectedBoard, setSelectedBoard] = useState("");
   const [file, setFile] = useState(null);
-  const [filePreview, setFilePreview] = useState(null);
-  const [validationResult, setValidationResult] = useState(null);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isValid, setIsValid] = useState(false);
+  const [validationMessage, setValidationMessage] = useState("");
 
-  const billboardProfiles = {
-    board1448: {
-      name: '14x48 Digital Billboard',
-      width: 858,
-      height: 242,
-      formats: ['image/jpeg', 'image/png', 'image/bmp'],
-      spec: '858 x 242 px, RGB, 72 dpi, JPEG/BMP/PNG'
-    },
-    board1729: {
-      name: '17x29 Digital Billboard',
-      width: 576,
-      height: 336,
-      formats: ['image/jpeg', 'image/png', 'image/bmp'],
-      spec: '576 x 336 px, RGB, 72 dpi, JPEG/BMP/PNG'
-    },
-    board2010: {
-      name: '20x10 Digital Billboard',
-      width: 288,
-      height: 576,
-      formats: ['image/jpeg', 'image/png', 'image/bmp', 'video/mp4', 'video/quicktime'],
-      spec: '288 x 576 px, RGB, 72 dpi, JPEG/BMP/PNG or MP4/MOV'
-    },
-    board1227: {
-      name: '12x27 Digital Billboard',
-      width: 832,
-      height: 368,
-      formats: ['image/jpeg', 'image/png', 'image/bmp'],
-      spec: '832 x 368 px, RGB, 72 dpi, JPEG/BMP/PNG'
-    },
-    board178: {
-      name: '17x8 Digital Billboard',
-      width: 160,
-      height: 320,
-      formats: ['image/jpeg', 'image/png', 'image/bmp'],
-      spec: '160 x 320 px, RGB, 72 dpi, JPEG/BMP/PNG'
-    }
-  };
+  const validateFile = async (file, specs) => {
+    if (!file || !specs) return;
 
-  const handleBoardChange = (e) => {
-    setSelectedBoard(e.target.value);
-    setValidationResult(null);
-    setFile(null);
-    setFilePreview(null);
-    setErrorMessage('');
-    setSuccessMessage('');
-  };
-
-  const handleFileChange = (e) => {
-    const selected = e.target.files[0];
-    setErrorMessage('');
-    setSuccessMessage('');
-
-    if (!selectedBoard) {
-      setErrorMessage('Please select a billboard type first.');
+    if (!specs.allowedTypes.includes(file.type)) {
+      setIsValid(false);
+      setValidationMessage("Invalid file type.");
       return;
     }
 
-    if (selected) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const img = new Image();
-        img.onload = () => {
-          const profile = billboardProfiles[selectedBoard];
-          const isValidDimensions = img.width === profile.width && img.height === profile.height;
-          const isValidFormat = profile.formats.includes(selected.type);
-
-          if (isValidDimensions && isValidFormat) {
-            setValidationResult(true);
-            setSuccessMessage('✅ Image meets all specifications. You may now submit.');
-          } else {
-            setValidationResult(false);
-            setErrorMessage(`❌ Image must be ${profile.width} x ${profile.height}px and one of the formats: ${profile.formats.join(', ')}`);
-          }
-        };
-        img.src = event.target.result;
-        setFilePreview(event.target.result);
-      };
-      reader.readAsDataURL(selected);
-      setFile(selected);
+    const fileSizeMB = file.size / (1024 * 1024);
+    if (fileSizeMB > specs.maxSizeMB) {
+      setIsValid(false);
+      setValidationMessage("File size exceeds limit.");
+      return;
     }
-  };
 
-  const handleClear = () => {
-    setSelectedBoard('');
-    setFile(null);
-    setFilePreview(null);
-    setValidationResult(null);
-    setErrorMessage('');
-    setSuccessMessage('');
-    setIsSubmitting(false);
-  };
+    if (
+      selectedBoard === "digital_17x8" &&
+      file.name.match(billboardProfiles[selectedBoard].filenameRules.disallowedCharacters)
+    ) {
+      setIsValid(false);
+      setValidationMessage("Filename contains invalid characters.");
+      return;
+    }
 
-  const handleSubmit = async () => {
-    if (!file || !selectedBoard || !validationResult) return;
-
-    setIsSubmitting(true);
-
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      try {
-        const res = await fetch('/api/send-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            boardType: billboardProfiles[selectedBoard].name,
-            fileName: file.name,
-            fileData: reader.result.split(',')[1]
-          })
-        });
-
-        if (res.ok) {
-          setSuccessMessage('🎉 Artwork successfully submitted!');
-        } else {
-          const err = await res.json();
-          setErrorMessage(err.error || 'Something went wrong.');
-        }
-      } catch (err) {
-        setErrorMessage('Submission failed.');
-      } finally {
-        setIsSubmitting(false);
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    img.onload = () => {
+      if (img.width !== specs.width || img.height !== specs.height) {
+        setIsValid(false);
+        setValidationMessage(
+          `Image must be ${specs.width}x${specs.height}px. Uploaded image is ${img.width}x${img.height}px.`
+        );
+      } else {
+        setIsValid(true);
+        setValidationMessage("File is valid and ready to submit.");
       }
     };
-    reader.readAsDataURL(file);
   };
 
+  const handleFileChange = (e) => {
+    const uploadedFile = e.target.files[0];
+    setFile(uploadedFile);
+    const specs = billboardProfiles[selectedBoard];
+    validateFile(uploadedFile, specs);
+  };
+
+  const clearSelection = () => {
+    setSelectedBoard("");
+    setFile(null);
+    setIsValid(false);
+    setValidationMessage("");
+    document.getElementById("fileInput").value = null;
+  };
+
+  const specs = selectedBoard ? billboardProfiles[selectedBoard] : null;
+
   return (
-    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6">
-      <img src="/AdVisionAI.svg" alt="AdVisionAI Logo" className="w-48 h-auto mx-auto mb-6" />
+    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
+      <img src="/AdVisionAI.svg" alt="AdVisionAI Logo" className="w-48 h-auto mb-4" />
       <h1 className="text-4xl font-bold mb-2">AdVisionAI</h1>
       <h2 className="text-xl font-semibold mb-4">Upload Your Billboard Artwork</h2>
 
       <select
-        className="mb-4 border border-gray-300 rounded p-2"
+        className="mb-4 border rounded px-4 py-2"
         value={selectedBoard}
-        onChange={handleBoardChange}
+        onChange={(e) => {
+          setSelectedBoard(e.target.value);
+          setFile(null);
+          setIsValid(false);
+          setValidationMessage("");
+          document.getElementById("fileInput").value = null;
+        }}
       >
-        <option value="" disabled>Select a Billboard Type</option>
+        <option value="" disabled>
+          Select a Billboard Type
+        </option>
         {Object.entries(billboardProfiles).map(([key, profile]) => (
-          <option key={key} value={key}>{profile.name}</option>
+          <option key={key} value={key}>
+            {profile.name}
+          </option>
         ))}
       </select>
 
-      {selectedBoard && billboardProfiles[selectedBoard]?.spec && (
-        <div className="bg-gray-100 p-4 rounded-md shadow mb-4 max-w-md text-sm text-gray-700">
-          <p><strong>Specifications:</strong></p>
-          <p>{billboardProfiles[selectedBoard].spec}</p>
+      {specs && (
+        <div className="mb-4 text-sm text-gray-600 text-center">
+          <p>
+            <strong>Required Dimensions:</strong> {specs.width}x{specs.height}px
+          </p>
+          <p>
+            <strong>Max File Size:</strong> {specs.maxSizeMB}MB
+          </p>
+          <p>
+            <strong>Allowed File Types:</strong>{" "}
+            {specs.allowedTypes.join(", ").replace(/image\//g, "").toUpperCase()}
+          </p>
+          {selectedBoard === "digital_17x8" && (
+            <p>
+              <strong>Filename Note:</strong> {specs.filenameRules.note}
+            </p>
+          )}
         </div>
       )}
 
-      <input type="file" onChange={handleFileChange} className="mb-4" />
+      <input id="fileInput" type="file" className="mb-4" onChange={handleFileChange} />
 
-      {filePreview && (
+      {file && (
         <div className="mb-4">
-          <img src={filePreview} alt="Preview" className="max-w-[600px] max-h-[400px] border" />
+          <p className="text-sm text-gray-700 text-center mb-2">Preview:</p>
+          <img
+            src={URL.createObjectURL(file)}
+            alt="Preview"
+            className="max-w-full max-h-64 mx-auto border rounded"
+          />
         </div>
       )}
 
-      {errorMessage && <div className="text-red-600 mb-2 text-sm">{errorMessage}</div>}
-      {successMessage && <div className="text-green-600 mb-2 text-sm">{successMessage}</div>}
+      {validationMessage && (
+        <p className={`mb-2 ${isValid ? "text-green-600" : "text-red-600"}`}>
+          {validationMessage}
+        </p>
+      )}
 
       <div className="flex gap-4">
         <button
-          onClick={handleSubmit}
-          disabled={!validationResult || isSubmitting}
-          className={`px-4 py-2 rounded text-white ${validationResult ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-300 cursor-not-allowed'}`}
+          disabled={!isValid}
+          className={`px-4 py-2 rounded text-white ${
+            isValid ? "bg-blue-600" : "bg-gray-400 cursor-not-allowed"
+          }`}
         >
-          {isSubmitting ? 'Submitting...' : 'Approve & Submit'}
+          Approve & Submit
         </button>
         <button
-          onClick={handleClear}
-          className="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400 text-black"
+          onClick={clearSelection}
+          className="px-4 py-2 rounded text-white bg-red-500"
         >
           Clear
         </button>
