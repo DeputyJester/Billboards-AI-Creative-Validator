@@ -1,3 +1,4 @@
+// pages/api/send-email.js
 import { Resend } from 'resend';
 
 export default async function handler(req, res) {
@@ -11,11 +12,14 @@ export default async function handler(req, res) {
   try {
     const response = await resend.emails.send({
       from: 'no-reply@advision.ai',
-      to: 'deputyjester@gmail.com', // ← Replace with your email
+      to: 'deputyjester@gmail.com', // you can change this to any test email
       subject: `New Billboard Submission - ${boardType}`,
-      html: `<p>A new billboard submission has been received.</p>
-             <p><strong>Board Type:</strong> ${boardType}</p>
-             <p><strong>File Name:</strong> ${fileName}</p>`,
+      html: `
+        <h2>New Billboard Submission</h2>
+        <p><strong>Board Type:</strong> ${boardType}</p>
+        <p><strong>File Name:</strong> ${fileName}</p>
+        <p>See attached image.</p>
+      `,
       attachments: [
         {
           filename: fileName,
