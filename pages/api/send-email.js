@@ -9,7 +9,7 @@ export default async function handler(req, res) {
 
   console.log("Using RESEND_API_KEY:", process.env.RESEND_API_KEY);
 
-  const { boardType, fileData, fileName } = req.body;
+  const { boardType, fileData, fileName, mimeType } = req.body;
 
   try {
     const response = await resend.sendEmail({
@@ -25,6 +25,8 @@ export default async function handler(req, res) {
         {
           filename: fileName,
           content: fileData,
+          type: mimeType || 'image/png', // Default to PNG
+          encoding: 'base64',
         },
       ],
     });
