@@ -124,7 +124,8 @@ export default function Home() {
           body: JSON.stringify({
             boardType: billboardProfiles[selectedBoard].name,
             fileName: file.name,
-            fileData: base64Data
+            fileData: base64Data,
+            mimeType: file.type // ✅ Added for proper attachment handling
           })
         });
 
