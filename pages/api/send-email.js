@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   const { boardType, fileData, fileName, mimeType } = req.body;
 
   try {
-    const response = await resend.sendEmail({
+    const response = await resend.emails.send({
       from: 'onboarding@resend.dev',
       to: 'deputyjester@gmail.com',
       subject: `New Billboard Submission - ${boardType}`,
@@ -20,13 +20,13 @@ export default async function handler(req, res) {
         <p>A new billboard submission has been received.</p>
         <p><strong>Board Type:</strong> ${boardType}</p>
         <p><strong>File Name:</strong> ${fileName}</p>
+        <p>The file is attached.</p>
       `,
       attachments: [
         {
           filename: fileName,
           content: fileData,
-          type: mimeType || 'image/png', // Default to PNG
-          encoding: 'base64',
+          contentType: mimeType, // ✅ This enables the attachment to show correctly
         },
       ],
     });
