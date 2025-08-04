@@ -1,6 +1,6 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY); // Moved outside handler
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -12,8 +12,8 @@ export default async function handler(req, res) {
   const { boardType, fileData, fileName } = req.body;
 
   try {
-    const response = await resend.emails.send({
-      from: 'onboarding@resend.dev', // Dev verified sender
+    const response = await resend.sendEmail({
+      from: 'onboarding@resend.dev',
       to: 'deputyjester@gmail.com',
       subject: `New Billboard Submission - ${boardType}`,
       html: `
