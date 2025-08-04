@@ -1,187 +1,187 @@
-import { useState, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import Image from 'next/image';
 
 const billboardProfiles = {
-  "14x48": {
-    name: "14x48 Digital Billboard",
+  board_14x48: {
+    name: '14x48 Digital Billboard',
     width: 858,
     height: 242,
-    formats: ["image/jpeg", "image/png", "image/bmp"],
-    dpi: 72,
+    formats: ['image/jpeg', 'image/png', 'image/bmp'],
   },
-  "17x29": {
-    name: "17x29 Digital Billboard",
+  board_17x29: {
+    name: '17x29 Digital Billboard',
     width: 576,
     height: 336,
-    formats: ["image/jpeg", "image/png", "image/bmp"],
-    dpi: 72,
+    formats: ['image/jpeg', 'image/png', 'image/bmp'],
   },
-  "20x10": {
-    name: "20x10 Digital Billboard",
+  board_20x10: {
+    name: '20x10 Digital Billboard',
     width: 288,
     height: 576,
-    formats: ["image/jpeg", "image/png", "image/bmp", "video/mp4", "video/quicktime"],
-    dpi: 72,
+    formats: ['image/jpeg', 'image/png', 'image/bmp', 'video/mp4', 'video/quicktime'],
   },
-  "12x27": {
-    name: "12x27 Digital Billboard",
+  board_12x27: {
+    name: '12x27 Digital Billboard',
     width: 832,
     height: 368,
-    formats: ["image/jpeg", "image/png", "image/bmp"],
-    dpi: 72,
+    formats: ['image/jpeg', 'image/png', 'image/bmp'],
   },
-  "17x8": {
-    name: "17x8 Digital Billboard",
+  board_17x8: {
+    name: '17x8 Digital Billboard',
     width: 160,
     height: 320,
-    formats: ["image/jpeg", "image/png", "image/bmp"],
-    dpi: 72,
+    formats: ['image/jpeg', 'image/png', 'image/bmp'],
   },
 };
 
 export default function Home() {
   const [selectedBoard, setSelectedBoard] = useState('');
-  const [specs, setSpecs] = useState(null);
-  const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [isValid, setIsValid] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [filePreview, setFilePreview] = useState(null);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const fileInputRef = useRef();
 
-  useEffect(() => {
-    if (!file || !selectedBoard) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new window.Image();
+  const validateImage = (file, board) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
       img.onload = () => {
-        const validDimensions =
-          img.width === billboardProfiles[selectedBoard].width &&
-          img.height === billboardProfiles[selectedBoard].height;
-
-        const validFormat = billboardProfiles[selectedBoard].formats.includes(file.type);
-
-        if (!validDimensions) {
-          setError(`Image dimensions must be ${billboardProfiles[selectedBoard].width}x${billboardProfiles[selectedBoard].height}px.`);
-          setIsValid(false);
-        } else if (!validFormat) {
-          setError(`Invalid file format. Supported formats: ${billboardProfiles[selectedBoard].formats.join(', ')}`);
-          setIsValid(false);
+        if (
+          img.width === board.width &&
+          img.height === board.height &&
+          board.formats.includes(file.type)
+        ) {
+          resolve(true);
         } else {
-          setError('');
-          setIsValid(true);
+          let message = 'Uploaded file does not meet specifications:';
+          if (img.width !== board.width || img.height !== board.height) {
+            message += `\nExpected dimensions: ${board.width}x${board.height}px. Got: ${img.width}x${img.height}px.`;
+          }
+          if (!board.formats.includes(file.type)) {
+            message += `\nInvalid file format. Allowed formats: ${board.formats.join(', ')}.`;
+          }
+          reject(message);
         }
       };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-  }, [file, selectedBoard]);
+      img.onerror = () => reject('Failed to load image.');
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    setSelectedFile(null);
+    setFilePreview(null);
+    setError('');
+    setSuccessMessage('');
+
+    if (!file || !selectedBoard) return;
+
+    try {
+      await validateImage(file, billboardProfiles[selectedBoard]);
+      setSelectedFile(file);
+      setFilePreview(URL.createObjectURL(file));
+      setSuccessMessage('✅ Image meets all specifications. You may now submit.');
+    } catch (validationError) {
+      setError(validationError);
+    }
+  };
 
   const handleBoardChange = (e) => {
     setSelectedBoard(e.target.value);
-    setSpecs(billboardProfiles[e.target.value]);
-    setFile(null);
-    setPreview(null);
-    setIsValid(false);
+    setSelectedFile(null);
+    setFilePreview(null);
     setError('');
+    setSuccessMessage('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleFileChange = (e) => {
-    const uploadedFile = e.target.files[0];
-    if (uploadedFile) {
-      setFile(uploadedFile);
-      setPreview(URL.createObjectURL(uploadedFile));
-    }
-  };
-
-  const clearForm = () => {
+  const clearSelection = () => {
     setSelectedBoard('');
-    setSpecs(null);
-    setFile(null);
-    setPreview(null);
-    setIsValid(false);
+    setSelectedFile(null);
+    setFilePreview(null);
     setError('');
+    setSuccessMessage('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleSubmit = async () => {
-    if (!file || !selectedBoard || !isValid) return;
+    if (!selectedFile || !selectedBoard) return;
+    setIsSubmitting(true);
 
-    setSubmitting(true);
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const fileData = reader.result.split(',')[1];
+      const payload = {
+        boardType: billboardProfiles[selectedBoard].name,
+        fileName: selectedFile.name,
+        fileData,
+      };
 
-    try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64File = reader.result.split(',')[1];
+      try {
         const response = await fetch('/api/send-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            boardType: billboardProfiles[selectedBoard].name,
-            fileName: file.name,
-            fileData: base64File,
-          }),
+          body: JSON.stringify(payload),
         });
 
-        const result = await response.json();
         if (response.ok) {
-          alert('Submission sent successfully!');
-          clearForm();
+          alert('✅ Submission successful!');
+          clearSelection();
         } else {
-          console.error(result.error);
-          alert('Failed to send submission.');
+          const resJson = await response.json();
+          setError(resJson.error || 'Failed to send email.');
         }
-      };
-      reader.readAsDataURL(file);
-    } catch (err) {
-      console.error(err);
-      alert('An error occurred while submitting.');
-    } finally {
-      setSubmitting(false);
-    }
+      } catch (err) {
+        setError('An unexpected error occurred.');
+      } finally {
+        setIsSubmitting(false);
+      }
+    };
+    reader.readAsDataURL(selectedFile);
   };
 
   return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
-      <img src="/AdVisionAI.svg" alt="AdVisionAI Logo" className="w-48 h-auto mx-auto mb-4" />
-
-      <h1 className="text-4xl font-bold mb-2">AdVisionAI</h1>
+      <img src="/AdVisionAI.svg" alt="AdVisionAI Logo" className="max-w-sm h-auto mb-4" />
+      <h1 className="text-4xl font-bold mb-4">AdVisionAI</h1>
       <h2 className="text-xl font-semibold mb-6">Upload Your Billboard Artwork</h2>
 
-      <select value={selectedBoard} onChange={handleBoardChange} className="mb-4 border px-4 py-2 rounded">
+      <select value={selectedBoard} onChange={handleBoardChange} className="mb-4 p-2 border rounded">
         <option value="" disabled>Select a Billboard Type</option>
         {Object.entries(billboardProfiles).map(([key, profile]) => (
           <option key={key} value={key}>{profile.name}</option>
         ))}
       </select>
 
-      {specs && (
-        <div className="mb-4 text-sm text-center text-gray-700">
-          <p><strong>Dimensions:</strong> {specs.width}x{specs.height}px</p>
-          <p><strong>Formats:</strong> {specs.formats.join(', ')}</p>
-          <p><strong>Resolution:</strong> {specs.dpi} dpi</p>
+      {selectedBoard && (
+        <div className="mb-4 text-sm text-gray-600 max-w-md text-center">
+          <p><strong>Specs for {billboardProfiles[selectedBoard].name}:</strong></p>
+          <p>Dimensions: {billboardProfiles[selectedBoard].width}x{billboardProfiles[selectedBoard].height}px</p>
+          <p>Formats: {billboardProfiles[selectedBoard].formats.join(', ')}</p>
         </div>
       )}
 
-      <input type="file" accept="image/*" onChange={handleFileChange} className="mb-4" />
+      <input type="file" ref={fileInputRef} onChange={handleFileChange} className="mb-4" />
 
-      {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
-
-      {preview && (
-        <div className="mb-4">
-          <img src={preview} alt="Preview" className="max-w-xs border rounded shadow" />
-        </div>
+      {filePreview && (
+        <img src={filePreview} alt="Preview" className="max-w-md max-h-96 mb-4 border" />
       )}
 
-      <div className="flex gap-4">
+      {error && <div className="text-red-600 mb-4 whitespace-pre-line text-sm text-center">{error}</div>}
+      {successMessage && <div className="text-green-600 mb-4 text-sm text-center">{successMessage}</div>}
+
+      <div className="flex space-x-4">
         <button
           onClick={handleSubmit}
-          disabled={!isValid || submitting}
-          className={`px-4 py-2 rounded text-white ${isValid ? 'bg-blue-500 hover:bg-blue-600' : 'bg-gray-400 cursor-not-allowed'}`}
+          disabled={!selectedFile || !selectedBoard || !!error || isSubmitting}
+          className={`px-4 py-2 rounded text-white ${isSubmitting ? 'bg-gray-400' : 'bg-blue-500 hover:bg-blue-600'} ${(!selectedFile || !selectedBoard || !!error) && 'opacity-50 cursor-not-allowed'}`}
         >
-          {submitting ? 'Submitting...' : 'Approve & Submit'}
+          {isSubmitting ? 'Submitting...' : 'Approve & Submit'}
         </button>
 
-        <button onClick={clearForm} className="px-4 py-2 rounded bg-gray-200 text-gray-800 hover:bg-gray-300">
+        <button onClick={clearSelection} className="px-4 py-2 rounded border border-gray-400 text-gray-700 hover:bg-gray-100">
           Clear
         </button>
       </div>
