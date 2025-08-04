@@ -1,23 +1,22 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { boardType, fileData, fileName } = req.body;
+  console.log("Using RESEND_API_KEY:", process.env.RESEND_API_KEY);  // Debugging
 
-  console.log("Using RESEND_API_KEY:", process.env.RESEND_API_KEY);
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  const { boardType, fileData, fileName } = req.body;
 
   try {
     const response = await resend.emails.send({
       from: 'no-reply@advision.ai',
-      to: 'deputyjester@gmail.com',
+      to: 'deputyjester@gmail.com',  // 👈 Your email
       subject: `New Billboard Submission - ${boardType}`,
       html: `
-        <p><strong>New Billboard Submission Received</strong></p>
+        <p>A new billboard submission has been received.</p>
         <p><strong>Board Type:</strong> ${boardType}</p>
         <p><strong>File Name:</strong> ${fileName}</p>
       `,
