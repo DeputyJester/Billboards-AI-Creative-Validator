@@ -47,6 +47,8 @@ export default function Home() {
   const [file, setFile] = useState(null);
   const [isValid, setIsValid] = useState(false);
   const [validationMessage, setValidationMessage] = useState("");
+  const [submissionMessage, setSubmissionMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const validateFile = async (file, specs) => {
     if (!file || !specs) return;
@@ -83,7 +85,7 @@ export default function Home() {
         );
       } else {
         setIsValid(true);
-        setValidationMessage("File is valid and ready to submit.");
+        setValidationMessage("✅ File is valid and ready to submit.");
       }
     };
   };
@@ -93,6 +95,7 @@ export default function Home() {
     setFile(uploadedFile);
     const specs = billboardProfiles[selectedBoard];
     validateFile(uploadedFile, specs);
+    setSubmissionMessage("");
   };
 
   const clearSelection = () => {
@@ -100,7 +103,46 @@ export default function Home() {
     setFile(null);
     setIsValid(false);
     setValidationMessage("");
+    setSubmissionMessage("");
     document.getElementById("fileInput").value = null;
+  };
+
+  const handleSubmit = async () => {
+    if (!file || !selectedBoard) return;
+
+    setIsSubmitting(true);
+    setSubmissionMessage("");
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64Data = reader.result.split(",")[1];
+
+      try {
+        const res = await fetch("/api/send-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            boardType: billboardProfiles[selectedBoard].name,
+            fileName: file.name,
+            fileData: base64Data
+          })
+        });
+
+        if (res.ok) {
+          setSubmissionMessage("✅ Email sent successfully.");
+          clearSelection();
+        } else {
+          setSubmissionMessage("❌ Failed to send email.");
+        }
+      } catch (err) {
+        console.error(err);
+        setSubmissionMessage("❌ Error occurred while sending email.");
+      } finally {
+        setIsSubmitting(false);
+      }
+    };
+
+    reader.readAsDataURL(file);
   };
 
   const specs = selectedBoard ? billboardProfiles[selectedBoard] : null;
@@ -166,23 +208,30 @@ export default function Home() {
       )}
 
       {validationMessage && (
-        <p className={`mb-2 ${isValid ? "text-green-600" : "text-red-600"}`}>
+        <p className={`mb-2 text-center ${isValid ? "text-green-600" : "text-red-600"}`}>
           {validationMessage}
         </p>
       )}
 
+      {submissionMessage && (
+        <p className="mb-4 text-center font-semibold">{submissionMessage}</p>
+      )}
+
       <div className="flex gap-4">
         <button
-          disabled={!isValid}
+          onClick={handleSubmit}
+          disabled={!isValid || isSubmitting}
           className={`px-4 py-2 rounded text-white ${
-            isValid ? "bg-blue-600" : "bg-gray-400 cursor-not-allowed"
+            isValid && !isSubmitting
+              ? "bg-blue-600 hover:bg-blue-700"
+              : "bg-gray-400 cursor-not-allowed"
           }`}
         >
-          Approve & Submit
+          {isSubmitting ? "Submitting..." : "Approve & Submit"}
         </button>
         <button
           onClick={clearSelection}
-          className="px-4 py-2 rounded text-white bg-red-500"
+          className="px-4 py-2 rounded text-white bg-red-500 hover:bg-red-600"
         >
           Clear
         </button>
