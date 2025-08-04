@@ -5,15 +5,15 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  console.log("Using RESEND_API_KEY:", process.env.RESEND_API_KEY);  // Debugging
+  console.log("Using RESEND_API_KEY:", process.env.RESEND_API_KEY);
 
   const resend = new Resend(process.env.RESEND_API_KEY);
   const { boardType, fileData, fileName } = req.body;
 
   try {
     const response = await resend.emails.send({
-      from: 'onboarding@resend.dev',
-      to: 'deputyjester@gmail.com',  // 👈 Your email
+      from: 'onboarding@resend.dev', // TEMP test domain
+      to: 'deputyjester@gmail.com',
       subject: `New Billboard Submission - ${boardType}`,
       html: `
         <p>A new billboard submission has been received.</p>
