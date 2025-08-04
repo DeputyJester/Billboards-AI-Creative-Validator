@@ -11,7 +11,7 @@ export default async function handler(req, res) {
   try {
     const response = await resend.emails.send({
       from: 'no-reply@advision.ai',
-      to: 'your-email@domain.com', // ← Replace with your email
+      to: 'deputyjester@gmail.com', // ← Replace with your email
       subject: `New Billboard Submission - ${boardType}`,
       html: `<p>A new billboard submission has been received.</p>
              <p><strong>Board Type:</strong> ${boardType}</p>
