@@ -6,6 +6,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  console.log("Using RESEND_API_KEY:", process.env.RESEND_API_KEY);
+
   const resend = new Resend(process.env.RESEND_API_KEY);
   const { boardType, fileData, fileName } = req.body;
 
