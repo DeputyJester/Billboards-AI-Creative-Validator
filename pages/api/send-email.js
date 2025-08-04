@@ -12,7 +12,7 @@ export default async function handler(req, res) {
 
   try {
     const response = await resend.emails.send({
-      from: 'no-reply@advision.ai',
+      from: 'onboarding@resend.dev',
       to: 'deputyjester@gmail.com',  // 👈 Your email
       subject: `New Billboard Submission - ${boardType}`,
       html: `
