@@ -1,0 +1,96 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
+import { supabase } from "../../utils/supabaseClient";
+
+export default function SubmissionDetail() {
+  const router = useRouter();
+  const { id } = router.query;
+
+  const [submission, setSubmission] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!id) return;
+
+    const fetchSubmission = async () => {
+      const { data, error } = await supabase
+        .from("submissions")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (error) {
+        console.error("Error fetching submission:", error);
+      } else {
+        // ✅ Generate public URL from Supabase storage API
+        const { data: publicUrlData } = supabase
+          .storage
+          .from("creatives")
+          .getPublicUrl(data.file_url);
+
+        setSubmission({
+          ...data,
+          public_url: publicUrlData?.publicUrl || null
+        });
+      }
+      setLoading(false);
+    };
+
+    fetchSubmission();
+  }, [id]);
+
+  if (loading) return <div className="p-6">Loading...</div>;
+  if (!submission) return <div className="p-6 text-red-600">Submission not found.</div>;
+
+  return (
+    <div className="min-h-screen bg-white p-6">
+      <h1 className="text-3xl font-bold mb-4 text-gray-800">Submission Details</h1>
+
+      <div className="bg-white shadow rounded-lg p-4 mb-6">
+        <p>
+          <strong>Board Type:</strong> {submission.board_type}
+        </p>
+        <p>
+          <strong>Status:</strong>{" "}
+          <span className={submission.status === "Approved" ? "text-green-600" : "text-yellow-600"}>
+            {submission.status}
+          </span>
+        </p>
+        <p>
+          <strong>Uploaded At:</strong> {new Date(submission.uploaded_at).toLocaleString()}
+        </p>
+      </div>
+
+      {submission.public_url ? (
+        <div className="bg-white shadow rounded-lg p-4">
+          <p className="mb-2 font-semibold">Creative Preview:</p>
+          <img
+            src={submission.public_url}
+            alt="Creative Preview"
+            className="max-w-full h-auto border rounded mb-4"
+          />
+          <a
+            href={submission.public_url}
+            download={submission.original_file_name || "creative"}
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+          >
+            Download
+          </a>
+        </div>
+      ) : (
+        <p className="text-gray-500">No preview available.</p>
+      )}
+
+      <div className="mt-6">
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="px-4 py-2 rounded text-white bg-gray-600 hover:bg-gray-700"
+        >
+          Back to Dashboard
+        </button>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,59 @@
+import { useRouter } from 'next/router';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+
+export default function SubmissionDetail() {
+  const router = useRouter();
+  const { id } = router.query;
+
+  const [creative, setCreative] = useState(null);
+
+  useEffect(() => {
+    if (!id) return;
+
+    // Replace with real API call later
+    const mockCreative = {
+      id,
+      boardType: '14x48 Digital Billboard',
+      fileName: 'SummerAd2025.png',
+      status: 'Approved',
+      uploadedAt: '2025-08-04 10:32 AM',
+      imageUrl: '/uploads/SummerAd2025.png', // Replace with real image path
+    };
+
+    setCreative(mockCreative);
+  }, [id]);
+
+  if (!creative) {
+    return <div className="p-6">Loading submission details...</div>;
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto p-6">
+      <Link href="/dashboard" className="text-blue-600 underline mb-4 inline-block">← Back to Dashboard</Link>
+      <h1 className="text-2xl font-semibold mb-4">Submission Details</h1>
+
+      <div className="bg-white shadow p-4 rounded">
+        <p><strong>Board Type:</strong> {creative.boardType}</p>
+        <p><strong>File Name:</strong> {creative.fileName}</p>
+        <p><strong>Status:</strong> <span className="text-green-600">{creative.status}</span></p>
+        <p><strong>Uploaded At:</strong> {creative.uploadedAt}</p>
+        <div className="mt-4">
+          <img
+            src={creative.imageUrl}
+            alt="Creative Preview"
+            className="max-w-full border rounded"
+          />
+        </div>
+        <div className="mt-4 flex gap-4">
+          <button className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+            Download
+          </button>
+          <button className="bg-gray-100 px-4 py-2 rounded border hover:bg-gray-200">
+            Submit New Version
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
