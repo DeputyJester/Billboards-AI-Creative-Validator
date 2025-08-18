@@ -1,5 +1,8 @@
+// pages/index.tsx
 import { useState, ChangeEvent } from "react";
-import { supabase } from "../utils/supabaseClient";
+import { useRouter } from "next/router";
+import { useAuthGate } from "@/utils/useAuthGate";
+import { supabase } from "@/utils/supabaseClient";
 
 type BillboardProfile = {
   name: string;
@@ -14,34 +17,10 @@ type BillboardProfile = {
 };
 
 const billboardProfiles: Record<string, BillboardProfile> = {
-  digital_14x48: {
-    name: "14x48 Digital Billboard",
-    width: 858,
-    height: 242,
-    maxSizeMB: 25,
-    allowedTypes: ["image/jpeg", "image/png", "image/bmp"],
-  },
-  digital_17x29: {
-    name: "17x29 Digital Billboard",
-    width: 576,
-    height: 336,
-    maxSizeMB: 25,
-    allowedTypes: ["image/jpeg", "image/png", "image/bmp"],
-  },
-  digital_20x10: {
-    name: "20x10 Digital Billboard",
-    width: 288,
-    height: 576,
-    maxSizeMB: 25,
-    allowedTypes: ["image/jpeg", "image/png", "image/bmp"],
-  },
-  digital_12x27: {
-    name: "12x27 Digital Billboard",
-    width: 832,
-    height: 368,
-    maxSizeMB: 25,
-    allowedTypes: ["image/jpeg", "image/png", "image/bmp"],
-  },
+  digital_14x48: { name: "14x48 Digital Billboard", width: 858, height: 242, maxSizeMB: 25, allowedTypes: ["image/jpeg", "image/png", "image/bmp"] },
+  digital_17x29: { name: "17x29 Digital Billboard", width: 576, height: 336, maxSizeMB: 25, allowedTypes: ["image/jpeg", "image/png", "image/bmp"] },
+  digital_20x10: { name: "20x10 Digital Billboard", width: 288, height: 576, maxSizeMB: 25, allowedTypes: ["image/jpeg", "image/png", "image/bmp"] },
+  digital_12x27: { name: "12x27 Digital Billboard", width: 832, height: 368, maxSizeMB: 25, allowedTypes: ["image/jpeg", "image/png", "image/bmp"] },
   digital_17x8: {
     name: "17x8 Digital Billboard",
     width: 160,
@@ -56,12 +35,19 @@ const billboardProfiles: Record<string, BillboardProfile> = {
 };
 
 export default function Home() {
+  // ✅ Call hooks in a stable order every render
+  const router = useRouter();
+  const ready = useAuthGate(); // do NOT return before declaring other hooks
+
   const [selectedBoard, setSelectedBoard] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [isValid, setIsValid] = useState(false);
   const [validationMessage, setValidationMessage] = useState("");
   const [submissionMessage, setSubmissionMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // After ALL hooks are declared, you can gate rendering
+  if (!ready) return null;
 
   const validateFile = async (file: File, specs: BillboardProfile) => {
     if (!file || !specs) return;
@@ -107,9 +93,7 @@ export default function Home() {
     const uploadedFile = e.target.files?.[0] || null;
     setFile(uploadedFile);
     const specs = billboardProfiles[selectedBoard];
-    if (uploadedFile && specs) {
-      validateFile(uploadedFile, specs);
-    }
+    if (uploadedFile && specs) validateFile(uploadedFile, specs);
     setSubmissionMessage("");
   };
 
@@ -119,7 +103,7 @@ export default function Home() {
     setIsValid(false);
     setValidationMessage("");
     setSubmissionMessage("");
-    const fileInput = document.getElementById("fileInput") as HTMLInputElement;
+    const fileInput = document.getElementById("fileInput") as HTMLInputElement | null;
     if (fileInput) fileInput.value = "";
   };
 
@@ -130,52 +114,33 @@ export default function Home() {
     setSubmissionMessage("");
 
     try {
-      const timestamp = Date.now();
-      const filePath = `${timestamp}_${file.name}`;
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData?.user) throw new Error("User not authenticated");
+      const userId = userData.user.id;
 
-      // Upload file to Supabase storage
-      const { error: uploadError } = await supabase.storage
-        .from("creatives")
-        .upload(filePath, file);
+      const filePath = `${Date.now()}_${file.name}`;
+      const { error: storageError } = await supabase.storage.from("creatives").upload(filePath, file);
+      if (storageError) throw storageError;
 
-      if (uploadError) {
-        console.error("Error uploading file:", uploadError);
-        setSubmissionMessage("❌ Error uploading file.");
-        setIsSubmitting(false);
-        return;
-      }
+      const fileUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/creatives/${filePath}`;
 
-      // Get public URL
-      const { data: publicUrlData } = supabase.storage
-        .from("creatives")
-        .getPublicUrl(filePath);
-
-      const publicUrl = publicUrlData?.publicUrl || "";
-
-      // Save entry to database
       const { error: dbError } = await supabase.from("submissions").insert([
         {
+          user_id: userId,
           board_type: billboardProfiles[selectedBoard].name,
-          file_name: file.name,
-          file_url: publicUrl,
+          original_file_name: file.name,
+          file_url: fileUrl,
           status: "Approved",
           uploaded_at: new Date().toISOString(),
-          original_file_name: file.name,
         },
       ]);
+      if (dbError) throw dbError;
 
-      if (dbError) {
-        console.error("Error saving to database:", dbError);
-        setSubmissionMessage("❌ Error saving to database.");
-        setIsSubmitting(false);
-        return;
-      }
-
-      setSubmissionMessage("✅ Creative uploaded successfully.");
+      setSubmissionMessage("✅ Upload recorded successfully.");
       clearSelection();
     } catch (err) {
       console.error(err);
-      setSubmissionMessage("❌ An unexpected error occurred.");
+      setSubmissionMessage("❌ Error occurred while submitting.");
     } finally {
       setIsSubmitting(false);
     }
@@ -197,7 +162,7 @@ export default function Home() {
           setFile(null);
           setIsValid(false);
           setValidationMessage("");
-          const fileInput = document.getElementById("fileInput") as HTMLInputElement;
+          const fileInput = document.getElementById("fileInput") as HTMLInputElement | null;
           if (fileInput) fileInput.value = "";
         }}
       >
@@ -250,18 +215,14 @@ export default function Home() {
         </p>
       )}
 
-      {submissionMessage && (
-        <p className="mb-4 text-center font-semibold">{submissionMessage}</p>
-      )}
+      {submissionMessage && <p className="mb-4 text-center font-semibold">{submissionMessage}</p>}
 
       <div className="flex gap-4">
         <button
           onClick={handleSubmit}
           disabled={!isValid || isSubmitting}
           className={`px-4 py-2 rounded text-white ${
-            isValid && !isSubmitting
-              ? "bg-blue-600 hover:bg-blue-700"
-              : "bg-gray-400 cursor-not-allowed"
+            isValid && !isSubmitting ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"
           }`}
         >
           {isSubmitting ? "Submitting..." : "Approve & Submit"}

@@ -1,143 +1,93 @@
-import { useState, useEffect } from "react";
-import { supabase } from "../utils/supabaseClient";
+import { useEffect, useState } from "react";
+import { supabase } from "@/utils/supabaseClient";
+import { useAuthGate } from "@/utils/useAuthGate";
+import AppLayout from "@/components/applayout";
+
+interface Submission {
+  id: string;
+  board_type: string;
+  original_file_name: string;
+  file_url: string;
+  uploaded_at: string;
+  status: string;
+}
 
 export default function Dashboard() {
-  const [creatives, setCreatives] = useState<any[]>([]);
-  const [selectedCreative, setSelectedCreative] = useState<any>(null);
-  const [closingModal, setClosingModal] = useState(false);
-
-  // Fetch creatives
-  const fetchCreatives = async () => {
-    const { data, error } = await supabase
-      .from("submissions")
-      .select("*")
-      .order("uploaded_at", { ascending: false });
-
-    if (error) {
-      console.error("Error fetching creatives:", error);
-      return;
-    }
-    setCreatives(data || []);
-  };
+  const ready = useAuthGate();
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchCreatives();
+    if (!ready) return;
 
-    // Realtime updates
-    const channel = supabase
-      .channel("public:submissions")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "submissions" },
-        () => {
-          fetchCreatives();
-        }
-      )
-      .subscribe();
+    const fetchData = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-    return () => {
-      supabase.removeChannel(channel);
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from("submissions")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("uploaded_at", { ascending: false });
+
+      if (!error && data) {
+        setSubmissions(data);
+      }
+      setLoading(false);
     };
-  }, []);
 
-  const handleCloseModal = () => {
-    setClosingModal(true);
-    setTimeout(() => {
-      setSelectedCreative(null);
-      setClosingModal(false);
-    }, 300); // match animation duration
-  };
+    fetchData();
+  }, [ready]);
+
+  if (!ready) return null;
 
   return (
-    <div className="p-6">
-      <h1 className="text-3xl font-bold mb-4">Your Dashboard</h1>
-      <div className="bg-white p-4 rounded shadow">
-        <h2 className="text-lg font-semibold mb-3">Uploaded Creatives</h2>
-        {creatives.length === 0 ? (
-          <p>No uploads yet.</p>
+    <AppLayout>
+      <div className="min-h-screen bg-white p-6">
+        <h1 className="text-3xl font-bold text-center mb-6">
+          📋 Submission Dashboard
+        </h1>
+        {loading ? (
+          <p className="text-center">Loading submissions...</p>
+        ) : submissions.length === 0 ? (
+          <p className="text-center text-gray-500">No submissions yet.</p>
         ) : (
-          <table className="min-w-full border border-gray-200">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="px-4 py-2 border">Board Type</th>
-                <th className="px-4 py-2 border">File Name</th>
-                <th className="px-4 py-2 border">Status</th>
-                <th className="px-4 py-2 border">Uploaded At</th>
-              </tr>
-            </thead>
-            <tbody>
-              {creatives.map((creative) => (
-                <tr
-                  key={creative.id}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => setSelectedCreative(creative)}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {submissions.map((submission) => (
+              <div
+                key={submission.id}
+                className="border rounded-lg shadow p-4 flex flex-col items-center"
+              >
+                <img
+                  src={submission.file_url}
+                  alt={submission.original_file_name}
+                  className="w-full h-48 object-contain mb-3"
+                />
+                <h3 className="text-lg font-semibold text-center">
+                  {submission.original_file_name}
+                </h3>
+                <p className="text-sm text-gray-600">{submission.board_type}</p>
+                <p className="text-sm text-gray-600">
+                  Uploaded:{" "}
+                  {new Date(submission.uploaded_at).toLocaleString()}
+                </p>
+                <span
+                  className={`mt-2 text-xs font-semibold px-2 py-1 rounded-full ${
+                    submission.status === "Approved"
+                      ? "bg-green-100 text-green-700"
+                      : "bg-yellow-100 text-yellow-700"
+                  }`}
                 >
-                  <td className="px-4 py-2 border">{creative.board_type}</td>
-                  <td className="px-4 py-2 border">
-                    {creative.original_file_name}
-                  </td>
-                  <td className="px-4 py-2 border text-green-600">
-                    {creative.status}
-                  </td>
-                  <td className="px-4 py-2 border">
-                    {new Date(creative.uploaded_at).toLocaleString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  {submission.status}
+                </span>
+              </div>
+            ))}
+          </div>
         )}
       </div>
-
-      {/* Modal */}
-      {selectedCreative && (
-        <div
-          className={`fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 transition-opacity duration-300 ${
-            closingModal ? "opacity-0" : "opacity-100"
-          }`}
-          onClick={handleCloseModal}
-        >
-          <div
-            className={`bg-white rounded-lg shadow-lg max-w-2xl w-full p-6 transform transition-all duration-300 ${
-              closingModal ? "scale-95 opacity-0" : "scale-100 opacity-100"
-            }`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-2xl font-bold mb-4">Creative Details</h2>
-            <p>
-              <strong>File Name:</strong> {selectedCreative.original_file_name}
-            </p>
-            <p>
-              <strong>Board Type:</strong> {selectedCreative.board_type}
-            </p>
-            <p>
-              <strong>Status:</strong> {selectedCreative.status}
-            </p>
-            <p>
-              <strong>Uploaded At:</strong>{" "}
-              {new Date(selectedCreative.uploaded_at).toLocaleString()}
-            </p>
-
-            <div className="mt-4 max-h-[70vh] overflow-auto">
-              <p className="font-semibold mb-2">Creative Preview:</p>
-              <img
-                src={selectedCreative.file_url}
-                alt="Creative Preview"
-                className="border rounded max-w-full"
-              />
-            </div>
-
-            <div className="mt-6 text-right">
-              <button
-                onClick={handleCloseModal}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </AppLayout>
   );
 }

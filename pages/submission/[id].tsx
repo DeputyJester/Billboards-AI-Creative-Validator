@@ -1,8 +1,13 @@
+// pages/submission/[id].tsx
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
+import { useAuthGate } from "../../utils/useAuthGate";
 import { supabase } from "../../utils/supabaseClient";
 
 export default function SubmissionDetail() {
+  const ready = useAuthGate();
+  if (!ready) return null;
+
   const router = useRouter();
   const { id } = router.query;
 
@@ -11,7 +16,8 @@ export default function SubmissionDetail() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!id) return;
+    const submissionId = Array.isArray(id) ? id[0] : id;
+    if (!submissionId) return;
 
     const fetchSubmission = async () => {
       setLoading(true);
@@ -19,26 +25,28 @@ export default function SubmissionDetail() {
       const { data, error } = await supabase
         .from("submissions")
         .select("*")
-        .eq("id", id)
+        .eq("id", submissionId)
         .single();
 
       if (error) {
-        console.error(error);
+        console.error("Fetch error:", error);
+        setSubmission(null);
         setLoading(false);
         return;
       }
 
-      setSubmission(data);
+      setSubmission(data || null);
 
+      // Try storage path first, then fall back to direct URL
       if (data?.file_name) {
-        const { data: urlData } = supabase
-          .storage
+        const { data: urlData } = supabase.storage
           .from("creatives")
           .getPublicUrl(data.file_name);
-
-        if (urlData?.publicUrl) {
-          setPreviewUrl(urlData.publicUrl);
-        }
+        if (urlData?.publicUrl) setPreviewUrl(urlData.publicUrl);
+      } else if (data?.file_url) {
+        setPreviewUrl(data.file_url);
+      } else {
+        setPreviewUrl(null);
       }
 
       setLoading(false);
@@ -57,15 +65,11 @@ export default function SubmissionDetail() {
       <p><strong>Board Type:</strong> {submission.board_type}</p>
       <p><strong>File Name:</strong> {submission.original_file_name}</p>
       <p><strong>Status:</strong> {submission.status}</p>
-      <p><strong>Uploaded At:</strong> {submission.uploaded_at}</p>
+      <p><strong>Uploaded At:</strong> {new Date(submission.uploaded_at).toLocaleString()}</p>
 
       {previewUrl && (
         <div className="mt-4">
-          <img
-            src={previewUrl}
-            alt="Preview"
-            className="max-w-full max-h-96 border rounded"
-          />
+          <img src={previewUrl} alt="Preview" className="max-w-full max-h-96 border rounded" />
           <a
             href={previewUrl}
             download={submission.original_file_name || "download"}
