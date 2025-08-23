@@ -5,7 +5,7 @@ import { FaCloudUploadAlt } from "react-icons/fa";
 import { toast } from "sonner";
 import Header from "../components/header";
 
-import { supabase } from "../utils/supabaseClient";
+import supabase from "@/lib/supabaseclient";
 
 interface RowData {
   [key: string]: any;
