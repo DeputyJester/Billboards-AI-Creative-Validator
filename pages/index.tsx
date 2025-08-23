@@ -1,8 +1,8 @@
 // pages/index.tsx
 import { useState, ChangeEvent } from "react";
 import { useRouter } from "next/router";
-import { useAuthGate } from "@/utils/useAuthGate";
-import { supabase } from "@/utils/supabaseClient";
+import { useAuthGate } from "@/utils/useauthgate";
+import supabase from "@/lib/supabaseclient";
 
 type BillboardProfile = {
   name: string;

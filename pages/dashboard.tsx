@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/utils/supabaseClient";
-import { useAuthGate } from "@/utils/useAuthGate";
+import supabase from "@/lib/supabaseclient";
+import { useAuthGate } from "@/utils/useauthgate";
 import AppLayout from "@/components/applayout";
 
 interface Submission {

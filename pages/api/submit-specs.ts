@@ -1,6 +1,6 @@
 // pages/api/submit-specs.ts
 import { NextApiRequest, NextApiResponse } from "next";
-import { supabase } from "../../utils/supabaseClient";
+import supabase from "@/lib/supabaseclient";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {

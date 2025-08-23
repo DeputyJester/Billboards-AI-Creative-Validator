@@ -1,7 +1,7 @@
 // components/Header.tsx
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../utils/supabaseClient";
+import supabase from "@/lib/supabaseclient";
 
 interface UserInfo {
   email: string | null;

@@ -1,8 +1,8 @@
 // pages/submission/[id].tsx
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
-import { useAuthGate } from "../../utils/useAuthGate";
-import { supabase } from "../../utils/supabaseClient";
+import { useAuthGate } from "@/utils/useauthgate";
+import supabase from "@/lib/supabaseclient";
 
 export default function SubmissionDetail() {
   const ready = useAuthGate();
