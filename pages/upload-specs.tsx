@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { FaCloudUploadAlt } from "react-icons/fa";
 import { toast } from "sonner";
-import Header from "../components/header";
+// ⛔ removed: import Header from "../components/header";
 
 import supabase from "@/lib/supabaseclient";
 
@@ -246,7 +246,7 @@ export default function UploadSpecsPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      <Header />
+      {/* header is rendered globally by /pages/_app.js */}
       <div className="py-10 px-6 flex flex-col items-center">
         <h1 className="text-3xl font-bold mb-6">📥 Upload Billboard Specs</h1>
 

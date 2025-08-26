@@ -1,37 +1,39 @@
-// utils/useAuthGate.ts
+// utils/useauthgate.ts
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "./supabaseClient";
+import supabase from "@/lib/supabaseclient";
 
-interface UseAuthGateOptions {
-  requireRole?: "admin" | "user";
-}
+export type UseAuthGateReturn = {
+  ready: boolean;
+  userEmail: string | null;
+};
 
-export function useAuthGate({ requireRole }: UseAuthGateOptions = {}) {
+export function useAuthGate(): UseAuthGateReturn {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+    let unsub: (() => void) | undefined;
 
-      if (!user) {
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
         router.replace("/login");
         return;
       }
-
-      const role = (user.user_metadata as Record<string, any>)?.role ?? "user";
-
-      if (requireRole && role !== requireRole) {
-        router.replace("/dashboard");
-        return;
-      }
-
+      setUserEmail(session.user.email ?? null);
       setReady(true);
-    };
 
-    checkAuth();
-  }, [router, requireRole]);
+      const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+        if (!sess) router.replace("/login");
+        else setUserEmail(sess.user.email ?? null);
+      });
+      unsub = () => sub.subscription.unsubscribe();
+    })();
 
-  return ready;
+    return () => { unsub?.(); };
+  }, [router]);
+
+  return { ready, userEmail };
 }

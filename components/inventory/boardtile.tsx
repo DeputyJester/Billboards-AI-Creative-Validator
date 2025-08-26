@@ -1,9 +1,9 @@
+// components/inventory/boardtile.tsx
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import supabase from '@/lib/supabaseclient';
 
-// Minimal type
 type Board = {
   id: string;
   board_name: string;
@@ -16,7 +16,6 @@ type Board = {
   hero_image_path?: string | null;
 };
 
-// Resize to WebP in-browser
 async function toWebpBlob(file: File, maxSide = 1600, quality = 0.85): Promise<Blob> {
   const url = URL.createObjectURL(file);
   try {
@@ -42,10 +41,30 @@ async function toWebpBlob(file: File, maxSide = 1600, quality = 0.85): Promise<B
   }
 }
 
-export default function BoardTile({ board, orgId }: { board: Board; orgId: string }) {
-  const [preview, setPreview] = useState<string | null>(null);
+export default function BoardTile({ board }: { board: Board }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+
+  // helper: fetch a fresh signed URL for this board's hero path
+  async function refreshSignedUrl(path: string | null | undefined) {
+    if (!path) { setSignedUrl(null); return; }
+    const { data, error } = await supabase
+      .storage
+      .from('board-photos')
+      .createSignedUrl(path, 60 * 60); // 1 hour
+    if (error || !data?.signedUrl) {
+      setSignedUrl(null);
+      return;
+    }
+    // cache-bust in case browser caches previous URL
+    setSignedUrl(`${data.signedUrl}&t=${Date.now()}`);
+  }
+
+  useEffect(() => {
+    refreshSignedUrl(board.hero_image_path);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [board.hero_image_path]);
 
   async function uploadHero(file: File) {
     setBusy(true); setError(null);
@@ -56,24 +75,45 @@ export default function BoardTile({ board, orgId }: { board: Board; orgId: strin
       const hero = await toWebpBlob(file, 1600, 0.85);
       const thumb = await toWebpBlob(file, 600, 0.85);
 
-      const res = await fetch('/api/boards/hero-upload-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ boardId: board.id, orgId, heroName: 'hero.webp', thumbName: 'thumb.webp' })
-      });
-      const j = await res.json();
-      if (j.error) throw new Error(j.error);
+      // Get token for the URL-issuing API (membership check, etc.)
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('Not signed in');
 
+      // Ask server for signed upload URLs (org inferred from board)
+      const res = await fetch('/api/hero-upload-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          boardId: board.id,
+          heroName: 'hero.webp',
+          thumbName: 'thumb.webp',
+        }),
+      });
+
+      const raw = await res.text();
+      let j: any;
+      try { j = JSON.parse(raw); } catch {
+        throw new Error(`Upload URL error (${res.status}): ${raw.slice(0, 180)}`);
+      }
+      if (!res.ok || j?.error) throw new Error(j?.error || `Upload URL error (${res.status})`);
+
+      // PUT the image bytes to Storage
       await fetch(j.heroUrl, { method: 'PUT', body: hero });
       await fetch(j.thumbUrl, { method: 'PUT', body: thumb });
 
+      // Update the board row with the stored path
       const { error: upErr } = await supabase
         .from('boards')
         .update({ hero_image_path: j.heroPath, hero_updated_at: new Date().toISOString() })
         .eq('id', board.id);
       if (upErr) throw upErr;
 
-      setPreview(URL.createObjectURL(hero));
+      // Show the new image by generating a fresh signed URL
+      await refreshSignedUrl(j.heroPath);
     } catch (e: any) {
       setError(e.message || 'Upload failed');
     } finally {
@@ -101,10 +141,8 @@ export default function BoardTile({ board, orgId }: { board: Board; orgId: strin
         onDragOver={(e) => e.preventDefault()}
         onDrop={onDrop}
       >
-        {preview ? (
-          <img src={preview} alt="hero" className="w-full h-full object-cover" />
-        ) : board.hero_image_path ? (
-          <img src={`/api/boards/hero?boardId=${board.id}`} alt="hero" className="w-full h-full object-cover" />
+        {signedUrl ? (
+          <img src={signedUrl} alt="hero" className="w-full h-full object-cover" />
         ) : (
           <span className="text-sm text-neutral-500">{busy ? 'Uploading…' : 'Drag & drop hero image'}</span>
         )}
@@ -117,7 +155,12 @@ export default function BoardTile({ board, orgId }: { board: Board; orgId: strin
         <div>
           <label className="text-xs underline cursor-pointer">
             Replace
-            <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadHero(e.target.files[0])} />
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => e.target.files?.[0] && uploadHero(e.target.files[0])}
+            />
           </label>
         </div>
       </div>

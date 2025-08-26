@@ -1,67 +1,74 @@
-// components/Header.tsx
+// components/header.tsx
+'use client';
+
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import supabase from "@/lib/supabaseclient";
 
-interface UserInfo {
-  email: string | null;
-  role: string | null;
-}
-
 export default function Header() {
   const router = useRouter();
-  const [user, setUser] = useState<UserInfo>({ email: null, role: null });
+  const [email, setEmail] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
+  // Read session on mount + keep in sync
   useEffect(() => {
-    const loadUser = async () => {
-      const { data } = await supabase.auth.getUser();
-      const email = data.user?.email ?? null;
-      const role =
-        (data.user?.user_metadata as Record<string, any>)?.role ?? "user";
-      setUser({ email, role });
-    };
+    let unsub: (() => void) | undefined;
 
-    loadUser();
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setEmail(session?.user?.email ?? null);
+      setLoading(false);
 
-    const { data: subscription } = supabase.auth.onAuthStateChange(() => {
-      loadUser();
-    });
+      const { data } = supabase.auth.onAuthStateChange((_event, sess) => {
+        setEmail(sess?.user?.email ?? null);
+      });
+      unsub = () => data.subscription.unsubscribe();
+    })();
 
-    return () => {
-      subscription.subscription.unsubscribe();
-    };
+    return () => { unsub?.(); };
   }, []);
 
-  const handleLogout = async () => {
+  async function onSignOut() {
     await supabase.auth.signOut();
-    router.push("/login");
-  };
+    // Optionally, send to /login after logout:
+    router.replace("/login");
+  }
 
   return (
-    <header className="w-full bg-white border-b">
-      <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-        <div
-          className="text-lg font-semibold cursor-pointer"
-          onClick={() => router.push("/")}
-        >
-          AdVisionAI
-        </div>
+    <header className="w-full border-b border-neutral-200 bg-white">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
-          {user.role && (
-            <span className="text-xs px-2 py-1 rounded-full bg-gray-100 border">
-              {user.role === "admin" ? "Admin" : "User"}
-            </span>
-          )}
-          <span className="text-sm text-gray-700">
-            {user.email ? `Logged in as: ${user.email}` : "Not logged in"}
-          </span>
-          {user.email && (
-            <button
-              onClick={handleLogout}
-              className="ml-2 px-3 py-1 rounded bg-gray-800 text-white hover:bg-black"
+          <Link href="/" className="text-base font-semibold">
+            AdVisionAI
+          </Link>
+          <nav className="hidden md:flex items-center gap-4 text-sm text-neutral-700">
+            <Link href="/dashboard" className="hover:underline">Dashboard</Link>
+            <Link href="/upload-specs" className="hover:underline">Upload specs</Link>
+            <Link href="/inventory" className="hover:underline">Inventory</Link>
+          </nav>
+        </div>
+
+        <div className="text-sm">
+          {loading ? (
+            <span className="text-neutral-500">…</span>
+          ) : email ? (
+            <div className="flex items-center gap-3">
+              <span className="text-neutral-700">Signed in as <strong>{email}</strong></span>
+              <button
+                onClick={onSignOut}
+                className="rounded-md border border-neutral-300 px-3 py-1 hover:bg-neutral-100"
+              >
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="rounded-md border border-neutral-300 px-3 py-1 hover:bg-neutral-100"
             >
-              Log out
-            </button>
+              Sign in
+            </Link>
           )}
         </div>
       </div>
