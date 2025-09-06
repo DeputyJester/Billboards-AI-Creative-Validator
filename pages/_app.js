@@ -10,13 +10,17 @@ export default function MyApp({ Component, pageProps }) {
   // If a page exports `noHeader = true`, we skip rendering the global header
   const noHeader = Component.noHeader === true;
 
+  // Auto-hide the global header on client upload routes
+  const isClientRoute =
+    typeof router?.pathname === "string" && router.pathname.startsWith("/client/");
+
   useEffect(() => {
-    // could add route-level analytics or auth checks here if needed
+    // place for analytics or route checks if you want later
   }, [router.pathname]);
 
   return (
     <>
-      {!noHeader && <Header />}
+      {!noHeader && !isClientRoute && <Header />}
       <Component {...pageProps} />
     </>
   );
