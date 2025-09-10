@@ -3,8 +3,6 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { FaCloudUploadAlt } from "react-icons/fa";
 import { toast } from "sonner";
-// ⛔ removed: import Header from "../components/header";
-
 import supabase from "@/lib/supabaseclient";
 
 interface RowData {
@@ -15,7 +13,7 @@ interface UserProfile {
   organization_id: string;
 }
 
-// 🔧 Convert string like "15' 9"" to decimal (e.g. 15.75)
+// Convert "15' 9\"" ➜ 15.75
 function feetInchesToDecimal(value: string): number | null {
   try {
     if (!value || typeof value !== "string") return null;
@@ -28,6 +26,43 @@ function feetInchesToDecimal(value: string): number | null {
     console.error("Failed to parse feet/inches:", value, e);
     return null;
   }
+}
+
+// --- helpers ---
+function toNumberOrNull(v: any): number | null {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === "number" ? v : parseFloat(String(v).trim());
+  return Number.isFinite(n) ? n : null;
+}
+function normalizeState(v: any): string | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim().toUpperCase();
+  return s.length <= 2 ? s : s.slice(0, 2);
+}
+function normalizeZip(v: any): string | null {
+  if (v === null || v === undefined) return null;
+  const raw = String(v).trim();
+  const digits = raw.replace(/[^\d-]/g, "");
+  return digits || null;
+}
+function normalizeFaceDirection(v: any): string | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim().toUpperCase();
+  const allowed = new Set(["N", "NE", "E", "SE", "S", "SW", "W", "NW"]);
+  return allowed.has(s) ? s : s || null;
+}
+function normalizeFaceRead(v: any): string | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim().toUpperCase();
+  if (s === "LHR" || s === "LEFT" || s === "LEFT HAND READ") return "LHR";
+  if (s === "RHR" || s === "RIGHT" || s === "RIGHT HAND READ") return "RHR";
+  return s || null;
+}
+function isValidLat(n: number | null): boolean {
+  return typeof n === "number" && n >= -90 && n <= 90;
+}
+function isValidLng(n: number | null): boolean {
+  return typeof n === "number" && n >= -180 && n <= 180;
 }
 
 export default function UploadSpecsPage() {
@@ -47,7 +82,6 @@ export default function UploadSpecsPage() {
         console.error("Failed to get user:", userError);
         return;
       }
-
       const { data: profile, error: profileError } = await supabase
         .from("users")
         .select("organization_id")
@@ -58,19 +92,17 @@ export default function UploadSpecsPage() {
         console.error("Failed to get user profile:", profileError);
         return;
       }
-
       if (isMounted) setUserProfile(profile);
     };
-
     fetchUserProfile();
     return () => {
       isMounted = false;
     };
   }, []);
 
+  // Keep existing UX; core fields required + our location fields
   const requiredFields = [
     "board_name",
-    "location",
     "width_px",
     "height_px",
     "width_ft",
@@ -82,12 +114,24 @@ export default function UploadSpecsPage() {
     "max_file_size_mb",
     "dpi_min",
     "dpi_max",
+    // location requirements
+    "latitude",
+    "longitude",
+    "city",
+    "state",
+    "zipcode",
   ];
 
   const optionalFields = [
+    "location",
     "spec_group",
     "notes",
     "supported_animated_file_format",
+    "face_direction",
+    "face_read",
+    "county",
+    "geopath_id",
+    "board_type",
   ];
 
   const toggleGroup = (groupName: string) => {
@@ -139,7 +183,6 @@ export default function UploadSpecsPage() {
       }
 
       const [rawHeaders, ...rows] = raw;
-
       if (!Array.isArray(rawHeaders)) {
         setUploadStatus("❌ Invalid format. First row must contain header labels.");
         return;
@@ -147,7 +190,6 @@ export default function UploadSpecsPage() {
 
       const headers = rawHeaders.map((h: any) => h?.toString().trim());
       const data: RowData[] = [];
-
       rows.forEach((row: any[]) => {
         const rowData: RowData = {};
         headers.forEach((header, i) => {
@@ -156,21 +198,64 @@ export default function UploadSpecsPage() {
         data.push(rowData);
       });
 
+      // Validation (presence + simple checks)
       const errors: string[] = [];
       data.forEach((row, i) => {
         requiredFields.forEach((field) => {
-          if (!row[field] || row[field].toString().trim() === "") {
+          if (row[field] === undefined || row[field] === null || String(row[field]).trim() === "") {
             errors.push(`Row ${i + 2}: Missing "${field}"`);
           }
         });
+
+        const lat = toNumberOrNull(row.latitude);
+        const lng = toNumberOrNull(row.longitude);
+        if (row.latitude !== undefined && !isValidLat(lat)) {
+          errors.push(`Row ${i + 2}: "latitude" must be a number between -90 and 90`);
+        }
+        if (row.longitude !== undefined && !isValidLng(lng)) {
+          errors.push(`Row ${i + 2}: "longitude" must be a number between -180 and 180`);
+        }
+        if (row.state !== undefined && String(row.state).trim().length < 2) {
+          errors.push(`Row ${i + 2}: "state" looks too short; use 2-letter code (e.g., NV)`);
+        }
+        if (row.zipcode !== undefined) {
+          const z = normalizeZip(row.zipcode);
+          if (!z || !/^\d{5}(-\d{4})?$/.test(z)) {
+            errors.push(`Row ${i + 2}: "zipcode" should be 5 digits or ZIP+4 (e.g., 89101 or 89101-1234)`);
+          }
+        }
       });
+
+      // Preflight duplicate detection within the single sheet upload
+      const seenGeo = new Set<string>();
+      const seenSizeKey = new Set<string>();
+      const dupErrors: string[] = [];
+      data.forEach((row, i) => {
+        const geo = row.geopath_id ? String(row.geopath_id).trim() : "";
+        if (geo) {
+          const k = geo.toUpperCase();
+          if (seenGeo.has(k)) dupErrors.push(`Row ${i + 2}: Duplicate geopath_id "${geo}" in this upload.`);
+          seenGeo.add(k);
+        }
+        const name = (row.board_name ?? "").toString().trim();
+        const w = toNumberOrNull(row.width_px);
+        const h = toNumberOrNull(row.height_px);
+        if (name && w !== null && h !== null) {
+          const k2 = `${name}::${w}x${h}`.toUpperCase();
+          if (seenSizeKey.has(k2)) dupErrors.push(`Row ${i + 2}: Duplicate board_name+size "${name} ${w}x${h}" in this upload.`);
+          seenSizeKey.add(k2);
+        }
+      });
+      if (dupErrors.length > 0) {
+        errors.push(...dupErrors);
+      }
 
       setValidationErrors(errors);
       setPreviewData(data);
       setUploadStatus(
         errors.length === 0
           ? `✅ Parsed ${data.length} rows successfully.`
-          : "⚠️ Some rows have missing required fields."
+          : "⚠️ Some rows have missing or invalid fields."
       );
     } catch (error) {
       console.error("Upload error:", error);
@@ -182,8 +267,8 @@ export default function UploadSpecsPage() {
 
   const handleDownloadTemplate = () => {
     const link = document.createElement("a");
-    link.href = "/templates/billboard-spec-template-full.xlsx";
-    link.download = "Billboard Spec Template.xlsx";
+    link.href = "/templates/billboard-spec-template-v2.xlsx";
+    link.download = "Billboard Spec Template v2.xlsx";
     link.click();
   };
 
@@ -195,10 +280,35 @@ export default function UploadSpecsPage() {
         toast.warning("Please wait while your organization is being loaded.");
         return;
       }
-
       const orgId = userProfile.organization_id;
       if (!orgId) {
         toast.error("Organization not found for your user.");
+        return;
+      }
+
+      // Final client-side duplicate guard (same logic as parse step)
+      const dupSheetErrors: string[] = [];
+      const seenGeo = new Set<string>();
+      const seenSizeKey = new Set<string>();
+      previewData.forEach((row, i) => {
+        const geo = row.geopath_id ? String(row.geopath_id).trim() : "";
+        if (geo) {
+          const k = geo.toUpperCase();
+          if (seenGeo.has(k)) dupSheetErrors.push(`Row ${i + 2}: Duplicate geopath_id "${geo}" in this upload.`);
+          seenGeo.add(k);
+        }
+        const name = (row.board_name ?? "").toString().trim();
+        const w = toNumberOrNull(row.width_px);
+        const h = toNumberOrNull(row.height_px);
+        if (name && w !== null && h !== null) {
+          const k2 = `${name}::${w}x${h}`.toUpperCase();
+          if (seenSizeKey.has(k2)) dupSheetErrors.push(`Row ${i + 2}: Duplicate board_name+size "${name} ${w}x${h}" in this upload.`);
+          seenSizeKey.add(k2);
+        }
+      });
+      if (dupSheetErrors.length > 0) {
+        toast.error("❌ Duplicate row(s) detected in the upload (same board_name + pixel size, or geopath_id reused on different rows). Please fix your sheet and retry.");
+        setValidationErrors((prev) => [...prev, ...dupSheetErrors]);
         return;
       }
 
@@ -206,24 +316,75 @@ export default function UploadSpecsPage() {
         const widthDisplay = row.width_ft || "";
         const heightDisplay = row.height_ft || "";
 
+        // Normalize numerics
+        const latitude = toNumberOrNull(row.latitude);
+        const longitude = toNumberOrNull(row.longitude);
+
+        // 👇 NEW: force 6-decimal display strings derived from numeric values
+        const latitude_display =
+          latitude !== null ? latitude.toFixed(6) : null;
+        const longitude_display =
+          longitude !== null ? longitude.toFixed(6) : null;
+
         return {
           ...row,
           organization_id: orgId,
+
+          // feet displays + numeric
           width_ft: feetInchesToDecimal(row.width_ft),
           height_ft: feetInchesToDecimal(row.height_ft),
           width_display: widthDisplay,
           height_display: heightDisplay,
+
+          // normalized location/admin fields
+          latitude,
+          longitude,
+          latitude_display,
+          longitude_display,
+          zipcode: normalizeZip(row.zipcode),
+          city: row.city ? String(row.city).trim() : null,
+          state: normalizeState(row.state),
+          county: row.county ? String(row.county).trim() : null,
+          face_direction: normalizeFaceDirection(row.face_direction),
+          face_read: normalizeFaceRead(row.face_read),
+          geopath_id: row.geopath_id ? String(row.geopath_id).trim() : null,
+
+          // keep spec_group/board_type if present (no transformation here)
+          spec_group: row.spec_group ?? null,
+          board_type: row.board_type ?? null,
         };
       });
 
-      console.log("Submitting rows:", rowsToInsert);
+      // Split by presence of geopath_id for upsert
+      const rowsWithGeo = rowsToInsert.filter(
+        (r) => r.geopath_id && String(r.geopath_id).trim() !== ""
+      );
+      const rowsWithoutGeo = rowsToInsert.filter(
+        (r) => !r.geopath_id || String(r.geopath_id).trim() === ""
+      );
 
-      const { error } = await supabase.from("boards").insert(rowsToInsert);
+      // 1) Upsert when GeoPath is present (organization_id, geopath_id)
+      if (rowsWithGeo.length > 0) {
+        const { error: geoErr } = await supabase
+          .from("boards")
+          .upsert(rowsWithGeo, { onConflict: "organization_id,geopath_id" });
+        if (geoErr) {
+          console.error(geoErr);
+          throw geoErr;
+        }
+      }
 
-      if (error) {
-        console.error("Supabase insert error:", error);
-        toast.error("Submission failed. Please try again.");
-        return;
+      // 2) Otherwise upsert by (organization_id, board_name, width_px, height_px)
+      if (rowsWithoutGeo.length > 0) {
+        const { error: nameErr } = await supabase
+          .from("boards")
+          .upsert(rowsWithoutGeo, {
+            onConflict: "organization_id,board_name,width_px,height_px",
+          });
+        if (nameErr) {
+          console.error(nameErr);
+          throw nameErr;
+        }
       }
 
       toast.success("✅ Specs submitted successfully.");
@@ -231,9 +392,17 @@ export default function UploadSpecsPage() {
       setValidationErrors([]);
       setUploadStatus(null);
       setSelectedFile(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Submission error:", err);
-      toast.error("Error submitting specs. Please try again.");
+      if (err?.code === "23505") {
+        toast.error(
+          "❌ Duplicate row(s) detected in the upload (board_name+size or geopath_id). I deduped, but please check your sheet."
+        );
+      } else if (err?.message) {
+        toast.error(`Submission failed: ${err.message}`);
+      } else {
+        toast.error("Submission failed. Please try again.");
+      }
     }
   };
 
@@ -345,17 +514,16 @@ export default function UploadSpecsPage() {
                           return (
                             <tr
                               key={rowIndex}
-                              className={`${
-                                rowErrors.length > 0
+                              className={`${rowErrors.length > 0
                                   ? "bg-red-100"
                                   : gIdx % 2 === 0
-                                  ? "bg-white"
-                                  : "bg-gray-50"
-                              }`}
+                                    ? "bg-white"
+                                    : "bg-gray-50"
+                                }`}
                             >
                               {Object.values(row).map((value, i) => (
                                 <td key={i} className="border px-3 py-2 text-gray-800">
-                                  {value as string}
+                                  {String(value ?? "")}
                                 </td>
                               ))}
                             </tr>
@@ -375,10 +543,9 @@ export default function UploadSpecsPage() {
               </p>
               <button
                 onClick={handleSubmit}
-                disabled={!userProfile}
-                className={`${
-                  !userProfile ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
-                } text-white px-6 py-2 rounded shadow transition`}
+                disabled={!userProfile || uploading}
+                className={`${!userProfile || uploading ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+                  } text-white px-6 py-2 rounded shadow transition`}
               >
                 ✅ Approve and Submit
               </button>
