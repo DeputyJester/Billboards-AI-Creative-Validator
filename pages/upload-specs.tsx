@@ -108,7 +108,6 @@ export default function UploadSpecsPage() {
     "width_ft",
     "height_ft",
     "color_mode",
-    "pixel_aspect_ratio",
     "preferred_file_format",
     "supported_file_format",
     "max_file_size_mb",
@@ -515,10 +514,10 @@ export default function UploadSpecsPage() {
                             <tr
                               key={rowIndex}
                               className={`${rowErrors.length > 0
-                                  ? "bg-red-100"
-                                  : gIdx % 2 === 0
-                                    ? "bg-white"
-                                    : "bg-gray-50"
+                                ? "bg-red-100"
+                                : gIdx % 2 === 0
+                                  ? "bg-white"
+                                  : "bg-gray-50"
                                 }`}
                             >
                               {Object.values(row).map((value, i) => (
