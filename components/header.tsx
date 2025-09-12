@@ -40,7 +40,7 @@ export default function Header() {
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
           <Link href="/" className="text-base font-semibold">
-            AdVisionAI
+            OOH Loop
           </Link>
           <nav className="hidden md:flex items-center gap-4 text-sm text-neutral-700">
             <Link href="/dashboard" className="hover:underline">Dashboard</Link>

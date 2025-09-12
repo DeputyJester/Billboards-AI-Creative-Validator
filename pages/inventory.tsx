@@ -8,6 +8,7 @@ import Filterbar, { filterstate, filteroptions } from "@/components/inventory/fi
 import { usequerystate } from "@/hooks/usequerystate";
 import StartCampaignModal from "@/components/inventory/startcampaignmodal";
 import AddBoardModal from "@/components/inventory/addboardmodal";
+import BoardDetailsModal from "@/components/inventory/boarddetailsmodal"; // NEW
 
 type BoardRow = {
     id: string;
@@ -22,7 +23,6 @@ type BoardRow = {
     organization_id?: string;
 };
 
-// Helper to keep local list sorted like your fetch (group, then name)
 function compareBoards(a: BoardRow, b: BoardRow) {
     const ag = (a.spec_group || "ungrouped").toLowerCase();
     const bg = (b.spec_group || "ungrouped").toLowerCase();
@@ -40,10 +40,11 @@ export default function InventoryPage() {
     const [boards, setBoards] = useState<BoardRow[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Add-board modal state
     const [addOpen, setAddOpen] = useState(false);
 
-    // ---- Filter state (URL-synced) ----
+    // NEW: modal state for edit
+    const [editBoard, setEditBoard] = useState<BoardRow | null>(null);
+
     const { state: filters, setstate: setfilters } = usequerystate<filterstate>(
         {
             search: "",
@@ -71,7 +72,6 @@ export default function InventoryPage() {
         }
     );
 
-    // ---- Selection mode ----
     const [selectMode, setSelectMode] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [showStartCampaign, setShowStartCampaign] = useState(false);
@@ -86,7 +86,6 @@ export default function InventoryPage() {
     };
     const clearSelected = () => setSelected(new Set());
 
-    // ---- Initial auth/org ----
     useEffect(() => {
         if (!ready) return;
         (async () => {
@@ -115,12 +114,10 @@ export default function InventoryPage() {
         })();
     }, [ready, router]);
 
-    // ---- Fetch boards (server-side filtering) ----
     useEffect(() => {
         if (!orgId) return;
         (async () => {
             setLoading(true);
-
             let query = supabase
                 .from("boards")
                 .select(
@@ -129,18 +126,15 @@ export default function InventoryPage() {
                 )
                 .eq("organization_id", orgId);
 
-            // Search (board_name OR location)
             const q = (filters.search || "").trim();
             if (q) {
                 const esc = q.replace(/[%_]/g, "\\$&");
                 query = query.or(`board_name.ilike.%${esc}%,location.ilike.%${esc}%`);
             }
 
-            // Multi-selects
             if (filters.locations.length) query = query.in("location", filters.locations);
             if (filters.groups.length) query = query.in("spec_group", filters.groups);
 
-            // Pixels as OR of (w,h) pairs
             if (filters.pixelkeys.length) {
                 const pairs = filters.pixelkeys
                     .map((s) => s.trim())
@@ -153,13 +147,11 @@ export default function InventoryPage() {
                 if (pairs.length) query = query.or(pairs.join(","));
             }
 
-            // Ranges
             if (typeof filters.minwidthpx === "number") query = query.gte("width_px", filters.minwidthpx);
             if (typeof filters.maxwidthpx === "number") query = query.lte("width_px", filters.maxwidthpx);
             if (typeof filters.minheightpx === "number") query = query.gte("height_px", filters.minheightpx);
             if (typeof filters.maxheightpx === "number") query = query.lte("height_px", filters.maxheightpx);
 
-            // Order stable
             query = query.order("spec_group", { ascending: true }).order("board_name", { ascending: true });
 
             const { data, error } = await query;
@@ -198,7 +190,6 @@ export default function InventoryPage() {
                 <h1 className="text-2xl font-semibold">Inventory</h1>
 
                 <div className="flex items-center gap-2">
-                    {/* Add board */}
                     <button
                         onClick={() => setAddOpen(true)}
                         className="px-3 py-1.5 rounded-full border border-blue-600 bg-blue-600 text-white text-sm shadow"
@@ -207,15 +198,10 @@ export default function InventoryPage() {
                     </button>
 
                     <button
-                        onClick={() => {
-                            setSelectMode((v) => !v);
-                            clearSelected();
-                        }}
+                        onClick={() => { setSelectMode((v) => !v); clearSelected(); }}
                         className={
                             "px-3 py-1.5 rounded-full border text-sm " +
-                            (selectMode
-                                ? "border-blue-600 bg-blue-600 text-white"
-                                : "border-blue-600 text-blue-600 hover:bg-blue-50")
+                            (selectMode ? "border-blue-600 bg-blue-600 text-white" : "border-blue-600 text-blue-600 hover:bg-blue-50")
                         }
                     >
                         {selectMode ? "Done selecting" : "Select boards"}
@@ -242,6 +228,7 @@ export default function InventoryPage() {
                                     selectMode={selectMode}
                                     selected={selected.has(b.id)}
                                     onToggleSelect={() => toggleSelected(b.id)}
+                                    onEdit={(bb) => setEditBoard(bb)} // NEW
                                 />
                             ))}
                         </div>
@@ -261,6 +248,7 @@ export default function InventoryPage() {
                                 selectMode={selectMode}
                                 selected={selected.has(b.id)}
                                 onToggleSelect={() => toggleSelected(b.id)}
+                                onEdit={(bb) => setEditBoard(bb)} // NEW
                             />
                         ))}
                     </div>
@@ -305,18 +293,29 @@ export default function InventoryPage() {
                 onClose={() => setShowStartCampaign(false)}
             />
 
-            {/* Add-board modal */}
             <AddBoardModal
                 open={addOpen}
                 onClose={() => setAddOpen(false)}
                 onCreated={(row) => {
-                    // Optimistically merge and keep ordering consistent with your fetch (group + name)
                     setBoards((cur) => {
                         const next = [row as BoardRow, ...cur];
                         next.sort(compareBoards);
                         return next;
                     });
-                    // Do not close here; the modal shows a success overlay and lets the user Close or Add another.
+                }}
+            />
+
+            {/* NEW: Unified modal for Image + Details */}
+            <BoardDetailsModal
+                open={!!editBoard}
+                onClose={() => setEditBoard(null)}
+                orgId={orgId}
+                board={editBoard}
+                onSaved={(updated) => {
+                    // merge into list
+                    setBoards((cur) =>
+                        cur.map((b) => (b.id === updated.id ? { ...b, ...updated } as BoardRow : b))
+                    );
                 }}
             />
         </div>

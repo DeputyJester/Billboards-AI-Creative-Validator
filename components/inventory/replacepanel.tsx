@@ -23,12 +23,14 @@ export default function Replacepanel({
   onClose,
   board,
   orgId,
+  initialFile,       // ← NEW: allows pre-populating when dropped on tile
   onReplaced,
 }: {
   open: boolean;
   onClose: () => void;
   board: Board;
   orgId: string;
+  initialFile?: File | null;
   onReplaced?: (newPath: string) => void;
 }) {
   const [currentSignedUrl, setCurrentSignedUrl] = useState<string | null>(null);
@@ -46,8 +48,9 @@ export default function Replacepanel({
   /* ---------- Load current hero (signed URL) ---------- */
   useEffect(() => {
     let active = true;
+    if (!open) return;
+
     (async () => {
-      if (!open) return;
       setLoadingCurrent(true);
       if (!heroPath) {
         if (active) setCurrentSignedUrl(null);
@@ -62,8 +65,32 @@ export default function Replacepanel({
       else setCurrentSignedUrl(data.signedUrl);
       setLoadingCurrent(false);
     })();
+
     return () => { active = false; };
   }, [open, heroPath]);
+
+  /* ---------- Seed from initialFile when opening ---------- */
+  useEffect(() => {
+    if (!open) return;
+    if (initialFile) {
+      // validate initialFile like manual pick
+      if (!ALLOWED_MIME.has(initialFile.type)) {
+        // still allow showing preview; user can pick a valid one
+        console.warn("Initial file type not PNG/JPG; ignoring validation for preview.");
+      }
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setFile(initialFile);
+      setPreviewUrl(URL.createObjectURL(initialFile));
+      setFileErr("");
+    } else {
+      // clear previous selection when opening fresh without initial file
+      setFile(null);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+      setFileErr("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialFile]);
 
   /* ---------- File selection & validation ---------- */
   const onPickFile = (files: FileList | null) => {
@@ -119,7 +146,7 @@ export default function Replacepanel({
         .from("board-photos")
         .upload(newPath, file!, {
           contentType: file!.type || "application/octet-stream",
-          upsert: true,
+          upsert: true, // overwrite hero.{ext}
         });
       if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
 
@@ -129,6 +156,7 @@ export default function Replacepanel({
         .eq("id", board.id);
       if (updErr) throw updErr;
 
+      // refresh signed URL to show the newly uploaded image
       const { data: signed } = await supabase.storage
         .from("board-photos")
         .createSignedUrl(newPath, 60 * 60);
@@ -136,6 +164,7 @@ export default function Replacepanel({
 
       onReplaced?.(newPath);
 
+      // reset local picker
       setFile(null);
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
@@ -155,13 +184,13 @@ export default function Replacepanel({
         onClick={() => { if (!uploading) onClose(); }}
       />
 
-      {/* Centered modal (same wrapper logic as before to avoid breaking hover on tiles) */}
+      {/* Centered modal */}
       <div
         className={`fixed inset-0 z-[71] flex items-center justify-center p-4 ${open ? "" : "pointer-events-none opacity-0"}`}
         aria-hidden={!open}
       >
         <div className="w-full max-w-2xl max-h-[90vh] rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-xl overflow-hidden flex flex-col">
-          {/* Header (subtle gradient for polish) */}
+          {/* Header */}
           <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-gradient-to-b from-white/70 to-white/40 dark:from-zinc-950/70 dark:to-zinc-950/40 backdrop-blur flex items-center justify-between">
             <div className="min-w-0">
               <h3 className="text-base font-medium">Replace image</h3>
@@ -178,7 +207,7 @@ export default function Replacepanel({
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
-            {/* Current (ghosted inner frame) */}
+            {/* Current image */}
             <section>
               <div className="text-sm font-medium mb-2">Current image</div>
               <div className="relative h-32 rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-800/70 shadow-inner overflow-hidden">
@@ -194,7 +223,7 @@ export default function Replacepanel({
               </div>
             </section>
 
-            {/* New picker (ghost frame + size indicator) */}
+            {/* New picker */}
             <section>
               <div className="text-sm font-medium mb-2">
                 New image <span className="text-xs text-zinc-500">(PNG/JPG ≤ {MAX_FILE_MB} MB)</span>
@@ -264,7 +293,7 @@ export default function Replacepanel({
             )}
           </div>
 
-          {/* Footer (subtle gradient match) */}
+          {/* Footer */}
           <div className="px-5 py-4 border-t border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/70 backdrop-blur flex items-center justify-between">
             <div className="text-xs text-zinc-600">Changes apply only to this board.</div>
             <div className="flex items-center gap-2">
