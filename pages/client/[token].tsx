@@ -526,3 +526,8 @@ function Shell({ children }: { children: React.ReactNode }) {
 /** Tell _app.js to hide the global header on this route */
 (ClientUploadPage as any).noHeader = true;
 export default ClientUploadPage;
+
+// Force SSR so Next doesn't try to statically pre-render this page at build time
+export async function getServerSideProps() {
+    return { props: {} };
+}

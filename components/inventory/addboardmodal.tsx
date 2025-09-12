@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import supabase from "@/lib/supabaseclient";
+import { BOARD_TYPE_OPTIONS } from '@/lib/boardconstants';
+
 
 /* ---------- Types ---------- */
 type InsertBoard = {
@@ -7,6 +9,7 @@ type InsertBoard = {
     board_name: string | null;
     location: string | null;
     spec_group: string | null;
+    board_type: string | null; // <— NEW
     width_px: number | null;
     height_px: number | null;
     width_ft: number | null;
@@ -36,7 +39,6 @@ type MinimalBoard = {
     hero_image_path: string | null;
 };
 
-/* ---------- Component ---------- */
 export default function AddBoardModal({
     open,
     onClose,
@@ -54,8 +56,9 @@ export default function AddBoardModal({
     const [heroFile, setHeroFile] = useState<File | null>(null);
     const [heroPreview, setHeroPreview] = useState<string | null>(null);
 
-    // spec groups
+    // dropdowns
     const [specGroupOptions, setSpecGroupOptions] = useState<string[]>([]);
+    const [boardTypeOptions, setBoardTypeOptions] = useState<string[]>([]);
 
     // success overlay
     const [successOpen, setSuccessOpen] = useState(false);
@@ -69,6 +72,7 @@ export default function AddBoardModal({
             setHeroPreview(null);
             setForm(initialForm);
             setSpecGroupOptions([]);
+            setBoardTypeOptions([]);
             return;
         }
         (async () => {
@@ -84,34 +88,51 @@ export default function AddBoardModal({
             if (!currentOrgId) return;
             setOrgId(currentOrgId);
 
-            // 1) spec_groups table
+            // Baseline board types (guarantee "Mobile" exists)
+            const BASELINE_TYPES = [
+                "Bulletin",
+                "Poster",
+                "Digital",
+                "Static",
+                "Wallscape",
+                "Transit",
+                "Mobile",
+            ];
+
+            // 1) spec_groups table -> names + board_type
             const groupNames = new Set<string>();
+            const boardTypes = new Set<string>(BASELINE_TYPES);
+
             const sg = await supabase
                 .from("spec_groups")
-                .select("name")
+                .select("name, board_type")
                 .eq("organization_id", currentOrgId)
                 .order("name", { ascending: true });
             if (!sg.error && sg.data) {
                 sg.data.forEach((r: any) => {
                     const n = (r?.name || "").trim();
                     if (n) groupNames.add(n);
+                    const bt = (r?.board_type || "").trim();
+                    if (bt) boardTypes.add(bt);
                 });
             }
 
-            // 2) fallback: distinct boards.spec_group for org
+            // 2) fallback: distinct boards.spec_group / boards.board_type
             const bd = await supabase
                 .from("boards")
-                .select("spec_group")
+                .select("spec_group, board_type")
                 .eq("organization_id", currentOrgId);
             if (!bd.error && bd.data) {
                 bd.data.forEach((r: any) => {
                     const n = (r?.spec_group || "").trim();
                     if (n) groupNames.add(n);
+                    const bt = (r?.board_type || "").trim();
+                    if (bt) boardTypes.add(bt);
                 });
             }
 
-            const arr = Array.from(groupNames).sort((a, b) => a.localeCompare(b));
-            setSpecGroupOptions(arr);
+            setSpecGroupOptions(Array.from(groupNames).sort((a, b) => a.localeCompare(b)));
+            setBoardTypeOptions(Array.from(boardTypes).sort((a, b) => a.localeCompare(b)));
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
@@ -137,6 +158,7 @@ export default function AddBoardModal({
         board_name: "",
         location: "",
         spec_group: "",
+        board_type: "", // <— NEW
         width_px: "",
         height_px: "",
         width_ft: "",
@@ -177,7 +199,7 @@ export default function AddBoardModal({
         return true;
     }, [orgId, form]);
 
-    /* ---------- Save (insert-first) ---------- */
+    /* ---------- Save ---------- */
     const handleSave = async () => {
         try {
             setSaving(true);
@@ -198,6 +220,7 @@ export default function AddBoardModal({
                 board_name: textOrNull(form.board_name),
                 location: textOrNull(form.location),
                 spec_group: textOrNull(form.spec_group) || null,
+                board_type: textOrNull(form.board_type) || null, // <— NEW
                 width_px: numOrNull(form.width_px),
                 height_px: numOrNull(form.height_px),
                 width_ft: width_ft_num,
@@ -224,8 +247,10 @@ export default function AddBoardModal({
             if (insertErr) throw insertErr;
             if (!inserted?.id) throw new Error("Insert returned no id.");
 
-            onCreated(inserted as MinimalBoard);
+            // optional: upload hero immediately (same pattern as your existing uploader)
+            // keeping as-is—hero upload is handled via tile/modal after creation
 
+            onCreated(inserted as MinimalBoard);
             setJustAddedName(inserted.board_name || "Board");
             setSuccessOpen(true);
         } catch (e: any) {
@@ -323,6 +348,21 @@ export default function AddBoardModal({
                                     >
                                         <option value="">— None —</option>
                                         {specGroupOptions.map((name) => (
+                                            <option key={name} value={name}>{name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Board type (with Mobile available) */}
+                                <div className="md:col-span-2">
+                                    <label className="block text-xs text-zinc-600 mb-1">Board type</label>
+                                    <select
+                                        className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm"
+                                        value={form.board_type}
+                                        onChange={(e) => setForm((f) => ({ ...f, board_type: e.target.value }))}
+                                    >
+                                        <option value="">— None —</option>
+                                        {boardTypeOptions.map((name) => (
                                             <option key={name} value={name}>{name}</option>
                                         ))}
                                     </select>

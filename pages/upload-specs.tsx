@@ -3,9 +3,8 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { FaCloudUploadAlt } from "react-icons/fa";
 import { toast } from "sonner";
-// ⛔ removed: import Header from "../components/header";
-
 import supabase from "@/lib/supabaseclient";
+import { BOARD_TYPE_OPTIONS } from "@/lib/boardconstants"; // ← NEW
 
 interface RowData {
   [key: string]: any;
@@ -29,6 +28,8 @@ function feetInchesToDecimal(value: string): number | null {
     return null;
   }
 }
+
+const ALLOWED_TYPES = new Set(BOARD_TYPE_OPTIONS); // ← NEW
 
 export default function UploadSpecsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -157,12 +158,22 @@ export default function UploadSpecsPage() {
       });
 
       const errors: string[] = [];
+
       data.forEach((row, i) => {
+        // Required fields present?
         requiredFields.forEach((field) => {
           if (!row[field] || row[field].toString().trim() === "") {
             errors.push(`Row ${i + 2}: Missing "${field}"`);
           }
         });
+
+        // ✅ NEW: board_type validation (only if provided)
+        const t = row.board_type?.toString().trim();
+        if (t && !ALLOWED_TYPES.has(t)) {
+          errors.push(
+            `Row ${i + 2}: "board_type" must be one of: ${BOARD_TYPE_OPTIONS.join(", ")}`
+          );
+        }
       });
 
       setValidationErrors(errors);
@@ -345,13 +356,12 @@ export default function UploadSpecsPage() {
                           return (
                             <tr
                               key={rowIndex}
-                              className={`${
-                                rowErrors.length > 0
+                              className={`${rowErrors.length > 0
                                   ? "bg-red-100"
                                   : gIdx % 2 === 0
-                                  ? "bg-white"
-                                  : "bg-gray-50"
-                              }`}
+                                    ? "bg-white"
+                                    : "bg-gray-50"
+                                }`}
                             >
                               {Object.values(row).map((value, i) => (
                                 <td key={i} className="border px-3 py-2 text-gray-800">
@@ -376,9 +386,8 @@ export default function UploadSpecsPage() {
               <button
                 onClick={handleSubmit}
                 disabled={!userProfile}
-                className={`${
-                  !userProfile ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
-                } text-white px-6 py-2 rounded shadow transition`}
+                className={`${!userProfile ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+                  } text-white px-6 py-2 rounded shadow transition`}
               >
                 ✅ Approve and Submit
               </button>

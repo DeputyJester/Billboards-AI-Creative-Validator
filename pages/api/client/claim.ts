@@ -13,13 +13,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : null;
         if (!bearer) return res.status(401).json({ error: "Unauthorized" });
 
-        const asUser = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${bearer}` } }, auth: { persistSession: false } });
+        const asUser = createClient(url, anon, {
+            global: { headers: { Authorization: `Bearer ${bearer}` } },
+            auth: { persistSession: false }
+        });
         const { data: ures, error: uerr } = await asUser.auth.getUser();
         if (uerr || !ures?.user) return res.status(401).json({ error: "Unauthorized" });
         const user = ures.user;
 
         const { inviteToken } = req.body || {};
-        if (!inviteToken || typeof inviteToken !== "string") return res.status(400).json({ error: "Missing inviteToken" });
+        if (!inviteToken || typeof inviteToken !== "string") {
+            return res.status(400).json({ error: "Missing inviteToken" });
+        }
 
         const admin = createClient(url, service, { auth: { persistSession: false } });
 
@@ -35,7 +40,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(403).json({ error: "Invite email does not match your account email" });
         }
 
-        // Campaign → get customer_id so we can bind
         const { data: camp } = await admin
             .from("campaigns")
             .select("id, organization_id, customer_id")
@@ -43,23 +47,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             .maybeSingle();
         if (!camp) return res.status(404).json({ error: "Campaign not found" });
 
-        // Link user to this customer (idempotent)
-        const { error: upErr } = await admin
+        await admin
             .from("customer_users")
             .upsert(
                 { organization_id: camp.organization_id, customer_id: camp.customer_id, user_id: user.id },
                 { onConflict: "organization_id,customer_id,user_id" }
             );
-        if (upErr) return res.status(400).json({ error: upErr.message });
 
-        // Backfill any past guest uploads for this invite → set client_user_id, uploaded_by_type='account'
         await admin
             .from("campaign_creatives")
-            .update({ client_user_id: user.id, uploaded_by_type: 'account' })
+            .update({ client_user_id: user.id, uploaded_by_type: "account" })
             .eq("invite_id", inv.id)
             .is("client_user_id", null);
 
-        // Mark invite used and log audit
         if (!inv.used_at) {
             await admin.from("client_invites").update({ used_at: new Date().toISOString() }).eq("id", inv.id);
         }

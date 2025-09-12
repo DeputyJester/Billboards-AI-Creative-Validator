@@ -89,3 +89,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(500).json({ error: e?.message || "Server error" });
     }
 }
+
+// Force SSR so Next won't try to pre-render this page at build time
+export async function getServerSideProps() {
+    return { props: {} };
+}
+
