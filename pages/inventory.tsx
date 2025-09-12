@@ -12,16 +12,17 @@ import BoardDetailsModal from "@/components/inventory/boarddetailsmodal"; // NEW
 
 type BoardRow = {
     id: string;
-    board_name: string | null;
-    location: string | null;
-    spec_group: string | null;
-    width_display: string | null;
-    height_display: string | null;
-    width_px: number | null;
-    height_px: number | null;
-    hero_image_path: string | null;
     organization_id?: string;
+    board_name?: string | null;
+    location?: string | null;
+    spec_group?: string | null;
+    width_display?: string | null;
+    height_display?: string | null;
+    width_px?: number | null;
+    height_px?: number | null;
+    hero_image_path?: string | null;
 };
+
 
 function compareBoards(a: BoardRow, b: BoardRow) {
     const ag = (a.spec_group || "ungrouped").toLowerCase();
