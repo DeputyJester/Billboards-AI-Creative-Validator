@@ -1,8 +1,8 @@
 // components/inventory/boarddetailsmodal.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import supabase from "@/lib/supabaseclient";
-import { BOARD_TYPE_OPTIONS, FACE_DIRECTION_OPTIONS, FACE_READ_OPTIONS } from '@/lib/boardconstants';
-
+import { toast } from "sonner";
+import { BOARD_TYPE_OPTIONS, FACE_DIRECTION_OPTIONS, FACE_READ_OPTIONS } from "@/lib/boardconstants";
 
 /* ---------- Types ---------- */
 export type Board = {
@@ -96,7 +96,7 @@ function normalizeZip(v: string | null | undefined) {
 function normalizeFaceDirection(v: string | null | undefined) {
     const s = (v ?? "").trim().toUpperCase();
     const allowed = new Set(["N", "NE", "E", "SE", "S", "SW", "W", "NW"]);
-    return s && allowed.has(s) ? s : (s || null);
+    return s && allowed.has(s) ? s : s || null;
 }
 function normalizeFaceRead(v: string | null | undefined) {
     const s = (v ?? "").trim().toUpperCase();
@@ -174,7 +174,86 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
         board_type: "",
     });
 
-    // --- Drop-in replacement for the useEffect that loads dropdown options ---
+    /* ---------- Load the full board row when modal opens ---------- */
+    useEffect(() => {
+        if (!open || !board?.id) return;
+        let active = true;
+        (async () => {
+            try {
+                setLoadingFull(true);
+                const { data, error } = await supabase
+                    .from("boards")
+                    .select(`
+            id, organization_id,
+            board_name, location, spec_group, geopath_id,
+            width_px, height_px, width_ft, height_ft, width_display, height_display,
+            color_mode, preferred_file_format, supported_file_format, supported_animated_file_format,
+            dpi_min, dpi_max, notes, hero_image_path,
+            latitude, longitude, latitude_display, longitude_display,
+            city, state, zipcode, county,
+            face_direction, face_read, board_type
+          `)
+                    .eq("id", board.id)
+                    .maybeSingle();
+
+                if (!active) return;
+                if (!error && data) setFull(data as Board);
+            } finally {
+                if (active) setLoadingFull(false);
+            }
+        })();
+        return () => {
+            active = false;
+        };
+    }, [open, board?.id]);
+
+    /* ---------- Seed the form from the loaded/current row ---------- */
+    useEffect(() => {
+        if (!open) return;
+        const src = current;
+        if (!src) return;
+
+        const numToStr = (n: number | null | undefined) =>
+            typeof n === "number" && Number.isFinite(n) ? String(n) : "";
+
+        setForm({
+            board_name: src.board_name ?? "",
+            location: src.location ?? "",
+            spec_group: src.spec_group ?? "",
+            geopath_id: src.geopath_id ?? "",
+            width_px: numToStr(src.width_px),
+            height_px: numToStr(src.height_px),
+            // fall back to parsing display feet if numeric ft are missing
+            width_ft:
+                numToStr(src.width_ft) ||
+                (parseFeetFromDisplay(src.width_display) != null
+                    ? String(parseFeetFromDisplay(src.width_display))
+                    : ""),
+            height_ft:
+                numToStr(src.height_ft) ||
+                (parseFeetFromDisplay(src.height_display) != null
+                    ? String(parseFeetFromDisplay(src.height_display))
+                    : ""),
+            color_mode: src.color_mode ?? "",
+            preferred_file_format: src.preferred_file_format ?? "png",
+            supported_file_format: src.supported_file_format ?? "png,jpg,jpeg",
+            supported_animated_file_format: src.supported_animated_file_format ?? "",
+            dpi_min: numToStr(src.dpi_min),
+            dpi_max: numToStr(src.dpi_max),
+            notes: src.notes ?? "",
+            city: src.city ?? "",
+            state: src.state ?? "",
+            zipcode: src.zipcode ?? "",
+            county: src.county ?? "",
+            latitude: numToStr(src.latitude),
+            longitude: numToStr(src.longitude),
+            face_direction: src.face_direction ?? "",
+            face_read: src.face_read ?? "",
+            board_type: src.board_type ?? "",
+        });
+    }, [open, current?.id]); // re-seed whenever we load a different row
+
+    // Load dropdown options for this org
     useEffect(() => {
         let active = true;
         (async () => {
@@ -187,7 +266,7 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
                 "Static",
                 "Wallscape",
                 "Transit",
-                "Mobile", // <— ensure this is always present
+                "Mobile",
             ];
 
             const groupNames = new Set<string>();
@@ -222,7 +301,7 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
                 });
             }
 
-            // make sure the currently loaded board values are included too
+            // include current values
             if (current?.spec_group) groupNames.add(current.spec_group);
             if (current?.board_type) types.add(current.board_type);
 
@@ -230,59 +309,9 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
             setSpecGroupOptions(Array.from(groupNames).sort((a, b) => a.localeCompare(b)));
             setBoardTypeOptions(Array.from(types).sort((a, b) => a.localeCompare(b)));
         })();
-        return () => { active = false; };
-        // include current?.spec_group/board_type so we inject current selections once loaded
-    }, [open, orgId, current?.spec_group, current?.board_type]);
-
-
-    /* ---------- Load dropdown options for this org ---------- */
-    useEffect(() => {
-        let active = true;
-        (async () => {
-            if (!open || !orgId) return;
-
-            const groupNames = new Set<string>();
-            const types = new Set<string>();
-
-            // spec_groups: names + board_type
-            const sg = await supabase
-                .from("spec_groups")
-                .select("name, board_type")
-                .eq("organization_id", orgId)
-                .order("name", { ascending: true });
-            if (!sg.error && sg.data) {
-                sg.data.forEach((r: any) => {
-                    const n = (r?.name || "").trim();
-                    if (n) groupNames.add(n);
-                    const bt = (r?.board_type || "").trim();
-                    if (bt) types.add(bt);
-                });
-            }
-
-            // fallback to boards distinct spec_group + board_type (for legacy rows)
-            const bd = await supabase
-                .from("boards")
-                .select("spec_group, board_type")
-                .eq("organization_id", orgId);
-            if (!bd.error && bd.data) {
-                bd.data.forEach((r: any) => {
-                    const n = (r?.spec_group || "").trim();
-                    if (n) groupNames.add(n);
-                    const bt = (r?.board_type || "").trim();
-                    if (bt) types.add(bt);
-                });
-            }
-
-            // Ensure current values appear even if not in the sets
-            if (current?.spec_group) groupNames.add(current.spec_group);
-            if (current?.board_type) types.add(current.board_type);
-
-            if (!active) return;
-            setSpecGroupOptions(Array.from(groupNames).sort((a, b) => a.localeCompare(b)));
-            setBoardTypeOptions(Array.from(types).sort((a, b) => a.localeCompare(b)));
-        })();
-        return () => { active = false; };
-        // include current?.spec_group/board_type so we inject current selections once loaded
+        return () => {
+            active = false;
+        };
     }, [open, orgId, current?.spec_group, current?.board_type]);
 
     /* ---------- Signed URL for current hero ---------- */
@@ -304,7 +333,9 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
             else setCurrentSignedUrl(data.signedUrl);
             setLoadingCurrent(false);
         })();
-        return () => { active = false; };
+        return () => {
+            active = false;
+        };
     }, [open, heroPath]);
 
     /* ---------- Derived displays ---------- */
@@ -393,6 +424,8 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
             setFile(null);
             if (previewUrl) URL.revokeObjectURL(previewUrl);
             setPreviewUrl(null);
+
+            toast.success("✅ Image updated");
         } catch (e: any) {
             setErr(e?.message || "Failed to replace image.");
         } finally {
@@ -476,6 +509,8 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
 
             setFull((prev) => (prev ? { ...prev, ...(data as Board) } : (data as Board)));
             onSaved?.(data as Board);
+
+            toast.success("✅ Changes saved");
         } catch (e: any) {
             setErr(e?.message || "Failed to save changes.");
         } finally {
@@ -505,7 +540,7 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
                         </div>
                         <button
                             onClick={onClose}
-                            className="px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-sm disabled:opacity-50"
+                            className="px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-sm"
                             disabled={uploading || saving}
                         >
                             Close
@@ -571,7 +606,7 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
 
                                         {uploading && (
                                             <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30">
-                                                <div className="px-3 py-1.5 text-xs rounded-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow">
+                                                <div className="px-3 py-1.5 text-xs rounded-full bg-white dark:bg-zinc-8 00 border border-zinc-200 dark:border-zinc-700 shadow">
                                                     Uploading…
                                                 </div>
                                             </div>

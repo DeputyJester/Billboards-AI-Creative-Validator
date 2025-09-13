@@ -4,7 +4,8 @@ import axios from "axios";
 import { FaCloudUploadAlt } from "react-icons/fa";
 import { toast } from "sonner";
 import supabase from "@/lib/supabaseclient";
-import { BOARD_TYPE_OPTIONS } from "@/lib/boardconstants"; // ← NEW
+import { BOARD_TYPE_OPTIONS, SPEC_TEMPLATE_PATH } from "@/lib/boardconstants";
+import AppShell from "@/components/layout/appshell";
 
 interface RowData {
   [key: string]: any;
@@ -14,7 +15,7 @@ interface UserProfile {
   organization_id: string;
 }
 
-// 🔧 Convert string like "15' 9"" to decimal (e.g. 15.75)
+// Convert "15' 9\"" -> 15.75
 function feetInchesToDecimal(value: string): number | null {
   try {
     if (!value || typeof value !== "string") return null;
@@ -29,7 +30,7 @@ function feetInchesToDecimal(value: string): number | null {
   }
 }
 
-const ALLOWED_TYPES = new Set(BOARD_TYPE_OPTIONS); // ← NEW
+const ALLOWED_TYPES = new Set(BOARD_TYPE_OPTIONS);
 
 export default function UploadSpecsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -42,33 +43,29 @@ export default function UploadSpecsPage() {
 
   useEffect(() => {
     let isMounted = true;
-    const fetchUserProfile = async () => {
+    (async () => {
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (userError || !userData?.user) {
         console.error("Failed to get user:", userError);
         return;
       }
-
       const { data: profile, error: profileError } = await supabase
         .from("users")
         .select("organization_id")
         .eq("id", userData.user.id)
         .single();
-
       if (profileError) {
         console.error("Failed to get user profile:", profileError);
         return;
       }
-
       if (isMounted) setUserProfile(profile);
-    };
-
-    fetchUserProfile();
+    })();
     return () => {
       isMounted = false;
     };
   }, []);
 
+  // NOTE: removed pixel_aspect_ratio from required
   const requiredFields = [
     "board_name",
     "location",
@@ -77,7 +74,6 @@ export default function UploadSpecsPage() {
     "width_ft",
     "height_ft",
     "color_mode",
-    "pixel_aspect_ratio",
     "preferred_file_format",
     "supported_file_format",
     "max_file_size_mb",
@@ -89,13 +85,13 @@ export default function UploadSpecsPage() {
     "spec_group",
     "notes",
     "supported_animated_file_format",
+    // keep optional extras; we don’t enforce them here
+    "geopath_id",
+    "board_type",
   ];
 
   const toggleGroup = (groupName: string) => {
-    setExpandedGroups((prev) => ({
-      ...prev,
-      [groupName]: !prev[groupName],
-    }));
+    setExpandedGroups((prev) => ({ ...prev, [groupName]: !prev[groupName] }));
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -140,7 +136,6 @@ export default function UploadSpecsPage() {
       }
 
       const [rawHeaders, ...rows] = raw;
-
       if (!Array.isArray(rawHeaders)) {
         setUploadStatus("❌ Invalid format. First row must contain header labels.");
         return;
@@ -148,7 +143,6 @@ export default function UploadSpecsPage() {
 
       const headers = rawHeaders.map((h: any) => h?.toString().trim());
       const data: RowData[] = [];
-
       rows.forEach((row: any[]) => {
         const rowData: RowData = {};
         headers.forEach((header, i) => {
@@ -159,30 +153,43 @@ export default function UploadSpecsPage() {
 
       const errors: string[] = [];
 
+      // presence + type allow-list
       data.forEach((row, i) => {
-        // Required fields present?
         requiredFields.forEach((field) => {
-          if (!row[field] || row[field].toString().trim() === "") {
+          if (row[field] === undefined || row[field] === null || String(row[field]).trim() === "") {
             errors.push(`Row ${i + 2}: Missing "${field}"`);
           }
         });
 
-        // ✅ NEW: board_type validation (only if provided)
         const t = row.board_type?.toString().trim();
         if (t && !ALLOWED_TYPES.has(t)) {
-          errors.push(
-            `Row ${i + 2}: "board_type" must be one of: ${BOARD_TYPE_OPTIONS.join(", ")}`
-          );
+          errors.push(`Row ${i + 2}: "board_type" must be one of: ${BOARD_TYPE_OPTIONS.join(", ")}`);
+        }
+      });
+
+      // simple in-sheet duplicate detection (geopath OR name+pixels)
+      const seenGeo = new Set<string>();
+      const seenNameSize = new Set<string>();
+      data.forEach((row, i) => {
+        const geo = (row.geopath_id ?? "").toString().trim();
+        if (geo) {
+          const key = geo.toUpperCase();
+          if (seenGeo.has(key)) errors.push(`Row ${i + 2}: Duplicate geopath_id "${geo}" in this upload.`);
+          seenGeo.add(key);
+        }
+        const name = (row.board_name ?? "").toString().trim();
+        const w = Number(row.width_px);
+        const h = Number(row.height_px);
+        if (name && Number.isFinite(w) && Number.isFinite(h)) {
+          const key2 = `${name}::${w}x${h}`.toUpperCase();
+          if (seenNameSize.has(key2)) errors.push(`Row ${i + 2}: Duplicate board_name+size "${name} ${w}x${h}" in this upload.`);
+          seenNameSize.add(key2);
         }
       });
 
       setValidationErrors(errors);
       setPreviewData(data);
-      setUploadStatus(
-        errors.length === 0
-          ? `✅ Parsed ${data.length} rows successfully.`
-          : "⚠️ Some rows have missing required fields."
-      );
+      setUploadStatus(errors.length === 0 ? `✅ Parsed ${data.length} rows successfully.` : "⚠️ Some rows have missing or invalid fields.");
     } catch (error) {
       console.error("Upload error:", error);
       setUploadStatus("❌ Failed to parse file.");
@@ -193,7 +200,7 @@ export default function UploadSpecsPage() {
 
   const handleDownloadTemplate = () => {
     const link = document.createElement("a");
-    link.href = "/templates/billboard-spec-template-full.xlsx";
+    link.href = SPEC_TEMPLATE_PATH; // ← use constant from boardconstants
     link.download = "Billboard Spec Template.xlsx";
     link.click();
   };
@@ -206,17 +213,21 @@ export default function UploadSpecsPage() {
         toast.warning("Please wait while your organization is being loaded.");
         return;
       }
-
       const orgId = userProfile.organization_id;
       if (!orgId) {
         toast.error("Organization not found for your user.");
         return;
       }
 
+      // hard stop if validation still has errors
+      if (validationErrors.length > 0) {
+        toast.error("❌ Please fix the validation issues listed above and try again.");
+        return;
+      }
+
       const rowsToInsert = previewData.map((row) => {
         const widthDisplay = row.width_ft || "";
         const heightDisplay = row.height_ft || "";
-
         return {
           ...row,
           organization_id: orgId,
@@ -227,13 +238,15 @@ export default function UploadSpecsPage() {
         };
       });
 
-      console.log("Submitting rows:", rowsToInsert);
-
       const { error } = await supabase.from("boards").insert(rowsToInsert);
-
       if (error) {
         console.error("Supabase insert error:", error);
-        toast.error("Submission failed. Please try again.");
+        // surface common unique violation nicely
+        if ((error as any).code === "23505") {
+          toast.error("❌ Duplicate detected (GeoPath or Name+Pixels already exists). Please fix your sheet and retry.");
+        } else {
+          toast.error("Submission failed. Please try again.");
+        }
         return;
       }
 
@@ -256,8 +269,7 @@ export default function UploadSpecsPage() {
   }, {} as Record<string, RowData[]>);
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* header is rendered globally by /pages/_app.js */}
+    <AppShell>
       <div className="py-10 px-6 flex flex-col items-center">
         <h1 className="text-3xl font-bold mb-6">📥 Upload Billboard Specs</h1>
 
@@ -365,7 +377,7 @@ export default function UploadSpecsPage() {
                             >
                               {Object.values(row).map((value, i) => (
                                 <td key={i} className="border px-3 py-2 text-gray-800">
-                                  {value as string}
+                                  {String(value ?? "")}
                                 </td>
                               ))}
                             </tr>
@@ -395,6 +407,6 @@ export default function UploadSpecsPage() {
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }

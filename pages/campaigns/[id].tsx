@@ -2,6 +2,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import supabase from "@/lib/supabaseclient";
+import AppShell from "@/components/layout/appshell";
+import type { ReactElement } from "react";
 
 /* ----------------------------- Types ----------------------------- */
 type CampaignRow = {
@@ -37,7 +39,7 @@ type AuditRow = {
 };
 
 /* --------------------------- Page ------------------------------- */
-export default function CampaignDetailPage() {
+function CampaignDetailPage() {
     const router = useRouter();
     const campaignId = typeof router.query.id === "string" ? router.query.id : "";
 
@@ -324,3 +326,10 @@ function fmtWhen(iso?: string | null) {
     const d = new Date(iso);
     return d.toLocaleString();
 }
+
+/* ------------------------- Attach layout ------------------------ */
+(CampaignDetailPage as any).getLayout = (page: ReactElement) => (
+    <AppShell>{page}</AppShell>
+);
+
+export default CampaignDetailPage;

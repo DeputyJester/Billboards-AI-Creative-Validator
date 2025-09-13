@@ -31,17 +31,24 @@ export default function Header() {
 
   async function onSignOut() {
     await supabase.auth.signOut();
-    // Optionally, send to /login after logout:
     router.replace("/login");
   }
 
   return (
     <header className="w-full border-b border-neutral-200 bg-white">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-3">
-          <Link href="/" className="text-base font-semibold">
-            OOH Loop
+        <div className="flex items-center gap-4">
+          {/* Brand logo (left) */}
+          <Link href="/" aria-label="OOHLoop home" className="mr-1 flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/brand/loop logo dark.svg"
+              alt="OOHLoop"
+              className="h-16 w-auto md:h-20"
+            />
           </Link>
+
+          {/* Primary nav */}
           <nav className="hidden md:flex items-center gap-4 text-sm text-neutral-700">
             <Link href="/dashboard" className="hover:underline">Dashboard</Link>
             <Link href="/upload-specs" className="hover:underline">Upload specs</Link>
@@ -54,7 +61,9 @@ export default function Header() {
             <span className="text-neutral-500">…</span>
           ) : email ? (
             <div className="flex items-center gap-3">
-              <span className="text-neutral-700">Signed in as <strong>{email}</strong></span>
+              <span className="text-neutral-700">
+                Signed in as <strong>{email}</strong>
+              </span>
               <button
                 onClick={onSignOut}
                 className="rounded-md border border-neutral-300 px-3 py-1 hover:bg-neutral-100"

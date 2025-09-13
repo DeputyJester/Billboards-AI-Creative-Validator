@@ -1,9 +1,11 @@
 // pages/campaigns/index.tsx
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import type { ReactElement } from "react";
 import { useRouter } from "next/router";
 import { createPortal } from "react-dom";
 import supabase from "@/lib/supabaseclient";
 import { useAuthGate } from "@/utils/useauthgate";
+import AppShell from "@/components/layout/appshell";
 
 type CampaignRow = {
     id: string;
@@ -15,7 +17,7 @@ type CampaignRow = {
     created_at: string;
 };
 
-export default function CampaignsIndexPage() {
+function CampaignsIndexPage() {
     const { ready } = useAuthGate();
     const router = useRouter();
 
@@ -146,7 +148,9 @@ export default function CampaignsIndexPage() {
                         </option>
                     ))}
                 </select>
-                <div className="text-sm text-zinc-500">{loading ? "Loading…" : `${rows.length} result${rows.length === 1 ? "" : "s"}`}</div>
+                <div className="text-sm text-zinc-500">
+                    {loading ? "Loading…" : `${rows.length} result${rows.length === 1 ? "" : "s"}`}
+                </div>
             </div>
 
             <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
@@ -519,3 +523,7 @@ function fmtFeet(x?: string | null): string {
     if (/^\d+(\.\d+)?$/.test(s)) return `${s} ft`;
     return s;
 }
+
+/* ---- AppShell layout hook ---- */
+(CampaignsIndexPage as any).getLayout = (page: ReactElement) => <AppShell>{page}</AppShell>;
+export default CampaignsIndexPage;

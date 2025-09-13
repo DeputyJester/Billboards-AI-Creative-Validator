@@ -8,3 +8,7 @@ export const FACE_READ_OPTIONS = ['LHR', 'RHR'] as const;
 
 // If you use these anywhere:
 export const COLOR_MODE_OPTIONS = ['RGB', 'CMYK'] as const;
+
+// add this export
+export const SPEC_TEMPLATE_PATH = "/templates/billboard-spec-template-full"; // <-- set to your real file name
+
