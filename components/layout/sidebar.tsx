@@ -55,7 +55,7 @@ export default function Sidebar({
                     <div className="flex items-center gap-2">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                            src="/brand/loop logo dark.svg"
+                            src="/brand/loop-logo-dark.svg"
                             alt="OOH Loop"
                             className={collapsed ? "h-6 w-6" : "h-6 w-6"}
                             draggable={false}

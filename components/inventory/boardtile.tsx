@@ -35,12 +35,15 @@ export default function BoardTile({
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [imgLoading, setImgLoading] = useState(true);
 
-  // DnD & upload state (added)
+  // Cache-busting token so we can force <img> to reload even when path is unchanged
+  const [cacheBust, setCacheBust] = useState<number>(0);
+
+  // DnD & upload state
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [fileErr, setFileErr] = useState<string>("");
 
-  // Constants for validation (added)
+  // Validation constants
   const MAX_FILE_MB = 5;
   const BYTES_PER_MB = 1024 * 1024;
   const ALLOWED_EXT = new Set(["png", "jpg", "jpeg"]);
@@ -49,9 +52,10 @@ export default function BoardTile({
   // Sync local path with incoming prop
   useEffect(() => {
     setCurrentPath(heroPath);
+    // bump cache buster when parent sends a new path (even if it's same string we still refresh image via event below)
   }, [heroPath]);
 
-  // get signed URL for current hero image path
+  // Get signed URL for current hero image path
   useEffect(() => {
     let active = true;
     (async () => {
@@ -67,12 +71,31 @@ export default function BoardTile({
       if (!active) return;
       if (error || !data?.signedUrl) setSignedUrl(null);
       else setSignedUrl(data.signedUrl);
+      // whenever we fetch a new signed url, bump cache buster so <img> definitely reloads
+      setCacheBust(Date.now());
       setImgLoading(false);
     })();
     return () => {
       active = false;
     };
   }, [currentPath]);
+
+  // Listen for "board:hero-updated" events so we refresh even if path didn't change
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ id: string; path?: string; ts?: number }>;
+      if (!ce?.detail) return;
+      if (ce.detail.id !== board.id) return;
+      if (ce.detail.path) setCurrentPath(ce.detail.path);
+      // force an immediate reload of the image
+      setCacheBust(Date.now());
+      setImgLoading(true);
+    };
+    window.addEventListener("board:hero-updated", handler as EventListener);
+    return () => {
+      window.removeEventListener("board:hero-updated", handler as EventListener);
+    };
+  }, [board.id]);
 
   // Display strings
   const pixelsText = useMemo(() => {
@@ -88,7 +111,14 @@ export default function BoardTile({
     return `${w} × ${h}`;
   }, [board.width_display, board.height_display]);
 
-  // ---- Drag & Drop handlers (added) ----
+  // Build the final URL we feed into <img>, with a cache-busting param
+  const displayUrl = useMemo(() => {
+    if (!signedUrl) return null;
+    const sep = signedUrl.includes("?") ? "&" : "?";
+    return `${signedUrl}${sep}cb=${cacheBust}`;
+  }, [signedUrl, cacheBust]);
+
+  // ---- Drag & Drop handlers ----
   const onDragOver: React.DragEventHandler<HTMLDivElement> = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -114,7 +144,7 @@ export default function BoardTile({
     await handleUpload(files[0]);
   };
 
-  // ---- Upload function (added) ----
+  // ---- Upload function ----
   const handleUpload = async (file: File) => {
     try {
       // validate
@@ -169,6 +199,7 @@ export default function BoardTile({
 
       // refresh local path -> triggers signed URL refresh
       setCurrentPath(newPath);
+      setCacheBust(Date.now()); // force-evict any cached <img> immediately
     } catch (e: any) {
       setFileErr(e?.message || "Failed to update image.");
     } finally {
@@ -178,7 +209,7 @@ export default function BoardTile({
 
   return (
     <div className="group rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm bg-white dark:bg-zinc-950 relative">
-      {/* selection control (unchanged) */}
+      {/* selection control */}
       {selectMode && (
         <button
           onClick={onToggleSelect}
@@ -190,9 +221,7 @@ export default function BoardTile({
           <span
             className={
               "w-3 h-3 rounded-full transition-transform duration-200 " +
-              (selected
-                ? "bg-blue-600 dark:bg-blue-400 scale-110"
-                : "bg-transparent scale-90")
+              (selected ? "bg-blue-600 dark:bg-blue-400 scale-110" : "bg-transparent scale-90")
             }
           />
         </button>
@@ -204,24 +233,25 @@ export default function BoardTile({
             "h-40 flex items-center justify-center " +
             (signedUrl ? "" : "bg-zinc-100 dark:bg-zinc-900")
           }
-          onClick={() =>
-            selectMode && onToggleSelect ? onToggleSelect() : null
-          }
+          onClick={() => (selectMode && onToggleSelect ? onToggleSelect() : null)}
           onDragOver={onDragOver}
           onDragEnter={onDragEnter}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
         >
-          {/* Image or placeholder (unchanged) */}
+          {/* Image or placeholder */}
           {imgLoading ? (
             <div className="text-xs text-zinc-500">Loading…</div>
-          ) : signedUrl ? (
+          ) : displayUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={signedUrl}
+              key={displayUrl} // ensure React swaps the node when URL (incl. cb) changes
+              src={displayUrl}
               alt={board.board_name || "board"}
               className={"h-40 w-full object-cover " + (selectMode ? "cursor-pointer" : "")}
               loading="lazy"
+              onLoad={() => setImgLoading(false)}
+              onError={() => setImgLoading(false)}
             />
           ) : (
             <div className="text-xs text-zinc-400">
@@ -229,7 +259,7 @@ export default function BoardTile({
             </div>
           )}
 
-          {/* DnD / Upload overlay (added) */}
+          {/* DnD / Upload overlay */}
           {(dragActive || uploading) && (
             <div className="absolute inset-0 bg-black/30 backdrop-blur-[1px] flex items-center justify-center">
               <div className="rounded-xl border-2 border-dashed border-white/80 px-4 py-2 text-white text-sm">
@@ -239,7 +269,7 @@ export default function BoardTile({
           )}
         </div>
 
-        {/* single hover action (unchanged) */}
+        {/* Hover action: Edit */}
         {!selectMode && (
           <div className="absolute inset-x-0 top-0 p-2 flex justify-end opacity-0 group-hover:opacity-100 transition">
             <button
@@ -260,9 +290,7 @@ export default function BoardTile({
         <Row label="Location" value={board.location || "—"} />
         <Row label="Pixels" value={pixelsText} />
         <Row label="Feet" value={feetText} />
-        {fileErr && (
-          <div className="text-[11px] text-red-600">{fileErr}</div>
-        )}
+        {fileErr && <div className="text-[11px] text-red-600">{fileErr}</div>}
       </div>
     </div>
   );
