@@ -42,7 +42,7 @@ export default function Header() {
           <Link href="/" aria-label="OOHLoop home" className="mr-1 flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/brand/loop logo dark.svg"
+              src="/brand/Loop-Logo-Dark.svg"
               alt="OOHLoop"
               className="h-16 w-auto md:h-20"
             />

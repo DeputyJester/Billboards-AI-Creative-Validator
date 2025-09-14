@@ -91,7 +91,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                         <Link href="/" className="ml-1 flex items-center gap-3 min-w-0">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                                src="/brand/loop logo dark.svg"
+                                src="/brand/loop-logo-dark.svg"
                                 alt="OOH LOOP"
                                 className="h-20 w-auto"
                             />

@@ -9,6 +9,7 @@ import { usequerystate } from "@/hooks/usequerystate";
 import StartCampaignModal from "@/components/inventory/startcampaignmodal";
 import AddBoardModal from "@/components/inventory/addboardmodal";
 import BoardDetailsModal from "@/components/inventory/boarddetailsmodal"; // NEW
+import AppShell from "@/components/layout/appshell"; // <-- ADDED
 
 type BoardRow = {
     id: string;
@@ -23,7 +24,6 @@ type BoardRow = {
     hero_image_path?: string | null;
 };
 
-
 function compareBoards(a: BoardRow, b: BoardRow) {
     const ag = (a.spec_group || "ungrouped").toLowerCase();
     const bg = (b.spec_group || "ungrouped").toLowerCase();
@@ -32,6 +32,9 @@ function compareBoards(a: BoardRow, b: BoardRow) {
     const bn = (b.board_name || "").toLowerCase();
     return an.localeCompare(bn);
 }
+
+// 👇 helper so tiles remount when the hero path updates
+const tileKey = (b: BoardRow) => `${b.id}:${b.hero_image_path ?? ""}`;
 
 export default function InventoryPage() {
     const { ready } = useAuthGate();
@@ -186,45 +189,66 @@ export default function InventoryPage() {
     if (!ready) return <div className="p-6 text-sm text-neutral-500">Checking session…</div>;
 
     return (
-        <div className="mx-auto max-w-7xl p-6 space-y-10">
-            <div className="flex items-center justify-between gap-3">
-                <h1 className="text-2xl font-semibold">Inventory</h1>
+        <AppShell>
+            <div className="mx-auto max-w-7xl p-6 space-y-10">
+                <div className="flex items-center justify-between gap-3">
+                    <h1 className="text-2xl font-semibold">Inventory</h1>
 
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => setAddOpen(true)}
-                        className="px-3 py-1.5 rounded-full border border-blue-600 bg-blue-600 text-white text-sm shadow"
-                    >
-                        + Add board
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setAddOpen(true)}
+                            className="px-3 py-1.5 rounded-full border border-blue-600 bg-blue-600 text-white text-sm shadow"
+                        >
+                            + Add board
+                        </button>
 
-                    <button
-                        onClick={() => { setSelectMode((v) => !v); clearSelected(); }}
-                        className={
-                            "px-3 py-1.5 rounded-full border text-sm " +
-                            (selectMode ? "border-blue-600 bg-blue-600 text-white" : "border-blue-600 text-blue-600 hover:bg-blue-50")
-                        }
-                    >
-                        {selectMode ? "Done selecting" : "Select boards"}
-                    </button>
+                        <button
+                            onClick={() => { setSelectMode((v) => !v); clearSelected(); }}
+                            className={
+                                "px-3 py-1.5 rounded-full border text-sm " +
+                                (selectMode ? "border-blue-600 bg-blue-600 text-white" : "border-blue-600 text-blue-600 hover:bg-blue-50")
+                            }
+                        >
+                            {selectMode ? "Done selecting" : "Select boards"}
+                        </button>
+                    </div>
                 </div>
-            </div>
 
-            <Filterbar value={filters} options={options} onChange={setfilters} resultsCount={boards.length} />
+                <Filterbar value={filters} options={options} onChange={setfilters} resultsCount={boards.length} />
 
-            {loading && <p className="text-sm text-neutral-500">Loading…</p>}
+                {loading && <p className="text-sm text-neutral-500">Loading…</p>}
 
-            {!loading && (filters.grouped ? (
-                grouped.map(([group, items]) => (
-                    <section key={group} className="space-y-4">
+                {!loading && (filters.grouped ? (
+                    grouped.map(([group, items]) => (
+                        <section key={group} className="space-y-4">
+                            <div className="flex items-center gap-3">
+                                <h2 className="text-lg font-medium">{group}</h2>
+                                <span className="text-xs text-neutral-500">{items.length} boards</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                                {items.map((b) => (
+                                    <BoardTile
+                                        key={tileKey(b)}  // 👈 include hero path to force remount on image change
+                                        board={b}
+                                        selectMode={selectMode}
+                                        selected={selected.has(b.id)}
+                                        onToggleSelect={() => toggleSelected(b.id)}
+                                        onEdit={(bb) => setEditBoard(bb)} // NEW
+                                    />
+                                ))}
+                            </div>
+                        </section>
+                    ))
+                ) : (
+                    <section className="space-y-4">
                         <div className="flex items-center gap-3">
-                            <h2 className="text-lg font-medium">{group}</h2>
-                            <span className="text-xs text-neutral-500">{items.length} boards</span>
+                            <h2 className="text-lg font-medium">All boards</h2>
+                            <span className="text-xs text-neutral-500">{boards.length} boards</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                            {items.map((b) => (
+                            {boards.map((b) => (
                                 <BoardTile
-                                    key={b.id}
+                                    key={tileKey(b)}  // 👈 include hero path to force remount on image change
                                     board={b}
                                     selectMode={selectMode}
                                     selected={selected.has(b.id)}
@@ -234,91 +258,72 @@ export default function InventoryPage() {
                             ))}
                         </div>
                     </section>
-                ))
-            ) : (
-                <section className="space-y-4">
-                    <div className="flex items-center gap-3">
-                        <h2 className="text-lg font-medium">All boards</h2>
-                        <span className="text-xs text-neutral-500">{boards.length} boards</span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                        {boards.map((b) => (
-                            <BoardTile
-                                key={b.id}
-                                board={b}
-                                selectMode={selectMode}
-                                selected={selected.has(b.id)}
-                                onToggleSelect={() => toggleSelected(b.id)}
-                                onEdit={(bb) => setEditBoard(bb)} // NEW
-                            />
-                        ))}
-                    </div>
-                </section>
-            ))}
+                ))}
 
-            {selectMode && (
-                <div className="fixed inset-x-0 bottom-0 z-40">
-                    <div className="mx-auto max-w-7xl px-6 pb-6">
-                        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/95 dark:bg-zinc-900/95 shadow-xl backdrop-blur p-4 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <span className="inline-flex items-center justify-center px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-600 text-white">
-                                    {selectedCount}
-                                </span>
-                                <span className="text-sm text-zinc-800 dark:text-zinc-100">
-                                    {selectedCount === 1 ? "board selected" : "boards selected"}
-                                </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={clearSelected}
-                                    className="px-3 py-1.5 rounded-full border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-sm"
-                                >
-                                    Clear
-                                </button>
-                                <button
-                                    onClick={() => setShowStartCampaign(true)}
-                                    disabled={selectedCount === 0}
-                                    className="px-3 py-1.5 rounded-full border border-blue-600 bg-blue-600 text-white disabled:opacity-50 text-sm shadow"
-                                >
-                                    Start campaign
-                                </button>
+                {selectMode && (
+                    <div className="fixed inset-x-0 bottom-0 z-40">
+                        <div className="mx-auto max-w-7xl px-6 pb-6">
+                            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/95 dark:bg-zinc-900/95 shadow-xl backdrop-blur p-4 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <span className="inline-flex items-center justify-center px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-600 text-white">
+                                        {selectedCount}
+                                    </span>
+                                    <span className="text-sm text-zinc-800 dark:text-zinc-100">
+                                        {selectedCount === 1 ? "board selected" : "boards selected"}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={clearSelected}
+                                        className="px-3 py-1.5 rounded-full border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-sm"
+                                    >
+                                        Clear
+                                    </button>
+                                    <button
+                                        onClick={() => setShowStartCampaign(true)}
+                                        disabled={selectedCount === 0}
+                                        className="px-3 py-1.5 rounded-full border border-blue-600 bg-blue-600 text-white disabled:opacity-50 text-sm shadow"
+                                    >
+                                        Start campaign
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
 
-            <StartCampaignModal
-                open={showStartCampaign}
-                boardIds={[...selected]}
-                onClose={() => setShowStartCampaign(false)}
-            />
+                <StartCampaignModal
+                    open={showStartCampaign}
+                    boardIds={[...selected]}
+                    onClose={() => setShowStartCampaign(false)}
+                />
 
-            <AddBoardModal
-                open={addOpen}
-                onClose={() => setAddOpen(false)}
-                onCreated={(row) => {
-                    setBoards((cur) => {
-                        const next = [row as BoardRow, ...cur];
-                        next.sort(compareBoards);
-                        return next;
-                    });
-                }}
-            />
+                <AddBoardModal
+                    open={addOpen}
+                    onClose={() => setAddOpen(false)}
+                    onCreated={(row) => {
+                        setBoards((cur) => {
+                            const next = [row as BoardRow, ...cur];
+                            next.sort(compareBoards);
+                            return next;
+                        });
+                    }}
+                />
 
-            {/* NEW: Unified modal for Image + Details */}
-            <BoardDetailsModal
-                open={!!editBoard}
-                onClose={() => setEditBoard(null)}
-                orgId={orgId}
-                board={editBoard}
-                onSaved={(updated) => {
-                    // merge into list
-                    setBoards((cur) =>
-                        cur.map((b) => (b.id === updated.id ? { ...b, ...updated } as BoardRow : b))
-                    );
-                }}
-            />
-        </div>
+                {/* NEW: Unified modal for Image + Details */}
+                <BoardDetailsModal
+                    open={!!editBoard}
+                    onClose={() => setEditBoard(null)}
+                    orgId={orgId}
+                    board={editBoard}
+                    onSaved={(updated) => {
+                        // merge into list (includes hero_image_path updates)
+                        setBoards((cur) =>
+                            cur.map((b) => (b.id === updated.id ? { ...b, ...updated } as BoardRow : b))
+                        );
+                    }}
+                />
+            </div>
+        </AppShell>
     );
 }
