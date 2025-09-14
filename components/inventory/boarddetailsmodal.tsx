@@ -178,11 +178,21 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
     const [zoom, setZoom] = useState(1);
     const [rotation, setRotation] = useState(0);
     const [croppedAreaPixels, setCroppedAreaPixels] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-    const aspect = useMemo(() => {
+
+    // NEW: Aspect lock toggle (defaults to FREEFORM — no lock)
+    const [lockAspect, setLockAspect] = useState(false);
+    const aspect = useMemo<number | undefined>(() => {
+        if (!lockAspect) return undefined; // freeform
         const w = current?.width_px ?? null;
         const h = current?.height_px ?? null;
         return w && h && w > 0 && h > 0 ? w / h : 16 / 9;
-    }, [current?.width_px, current?.height_px]);
+    }, [lockAspect, current?.width_px, current?.height_px]);
+
+    // Reset view a bit when switching lock to avoid weird states
+    useEffect(() => {
+        setCrop({ x: 0, y: 0 });
+        setZoom(1);
+    }, [lockAspect]);
 
     const [form, setForm] = useState({
         board_name: "",
@@ -325,16 +335,22 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
         (async () => {
             if (!open) return;
             setLoadingCurrent(true);
-            if (!heroPath) {
-                if (active) setCurrentSignedUrl(null);
-                setLoadingCurrent(false);
-                return;
+            try {
+                if (!heroPath) {
+                    if (active) setCurrentSignedUrl(null);
+                    return;
+                }
+                const { data, error } = await supabase.storage.from("board-photos").createSignedUrl(heroPath, 60 * 60);
+                if (!active) return;
+                if (error || !data?.signedUrl) {
+                    setCurrentSignedUrl(null);
+                } else {
+                    const sep = data.signedUrl.includes("?") ? "&" : "?";
+                    setCurrentSignedUrl(`${data.signedUrl}${sep}ts=${Date.now()}`);
+                }
+            } finally {
+                if (active) setLoadingCurrent(false);
             }
-            const { data, error } = await supabase.storage.from("board-photos").createSignedUrl(heroPath, 60 * 60);
-            if (!active) return;
-            if (error || !data?.signedUrl) setCurrentSignedUrl(null);
-            else setCurrentSignedUrl(data.signedUrl);
-            setLoadingCurrent(false);
         })();
         return () => {
             active = false;
@@ -404,13 +420,17 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
             if (updErr) throw updErr;
 
             const { data: signed } = await supabase.storage.from("board-photos").createSignedUrl(newPath, 60 * 60);
-            setCurrentSignedUrl(signed?.signedUrl || null);
+            if (signed?.signedUrl) {
+                const sep = signed.signedUrl.includes("?") ? "&" : "?";
+                setCurrentSignedUrl(`${signed.signedUrl}${sep}ts=${Date.now()}`);
+            } else {
+                setCurrentSignedUrl(null);
+            }
 
             setFull((prev) => (prev ? { ...prev, hero_image_path: newPath } : prev));
             onSaved?.({ id: current.id, hero_image_path: newPath });
 
-            // 👉 NEW: broadcast to any listening tiles so they refresh immediately,
-            // even if the storage path string didn't change (upsert to same file).
+            // broadcast so inventory tiles refresh immediately
             window.dispatchEvent(
                 new CustomEvent("board:hero-updated", {
                     detail: { id: current.id, path: newPath, ts: Date.now() },
@@ -562,7 +582,7 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
                                             <div className="h-full w-full flex items-center justify-center text-xs text-zinc-500">Loading…</div>
                                         ) : currentSignedUrl ? (
                                             // eslint-disable-next-line @next/next/no-img-element
-                                            <img src={currentSignedUrl} alt="Current" className="h-40 w-full object-cover" />
+                                            <img src={currentSignedUrl} alt="Current" className="h-40 w-full object-contain bg-black/5" />
                                         ) : (
                                             <div className="h-full w-full flex items-center justify-center text-xs text-zinc-400">No image</div>
                                         )}
@@ -599,13 +619,13 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
                                                         crop={crop}
                                                         zoom={zoom}
                                                         rotation={rotation}
-                                                        aspect={aspect}
+                                                        aspect={aspect}            // freeform when undefined
                                                         minZoom={1}
                                                         maxZoom={3}
                                                         zoomSpeed={1}
                                                         cropShape="rect"
                                                         showGrid={false}
-                                                        objectFit="cover"
+                                                        objectFit="contain"        // show whole photo initially
                                                         restrictPosition
                                                         classes={{
                                                             containerClassName: "",
@@ -622,19 +642,35 @@ export default function BoardDetailsModal({ open, onClose, orgId, board, onSaved
                                                 </div>
                                             ) : (
                                                 // eslint-disable-next-line @next/next/no-img-element
-                                                <img src={previewUrl} alt="Preview" className="absolute inset-0 h-full w-full object-cover" />
+                                                <img src={previewUrl} alt="Preview" className="absolute inset-0 h-full w-full object-contain bg-black/5" />
                                             )}
                                         </div>
 
                                         {/* Crop controls */}
                                         {previewUrl && (
-                                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                                            <div className="mt-3 flex flex-wrap items-center gap-3">
                                                 <button
                                                     onClick={() => setCropMode((v) => !v)}
                                                     className="px-3 py-1.5 rounded-full border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm"
                                                 >
                                                     {cropMode ? "Cancel adjust" : "Adjust crop"}
                                                 </button>
+
+                                                {/* NEW: aspect lock toggle */}
+                                                <label className="inline-flex items-center gap-2 text-xs text-zinc-600">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={lockAspect}
+                                                        onChange={(e) => setLockAspect(e.target.checked)}
+                                                    />
+                                                    Lock to board aspect
+                                                    {lockAspect && current?.width_px && current?.height_px ? (
+                                                        <span className="text-[11px] text-zinc-500">
+                                                            ({current.width_px}×{current.height_px})
+                                                        </span>
+                                                    ) : null}
+                                                </label>
+
                                                 {cropMode && (
                                                     <>
                                                         <div className="flex items-center gap-2 text-xs text-zinc-600">

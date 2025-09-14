@@ -33,17 +33,17 @@ export default function BoardTile({
   // Keep our own idea of the current storage path so we can refresh after uploads
   const [currentPath, setCurrentPath] = useState<string | null>(heroPath);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
-  const [imgLoading, setImgLoading] = useState(true);
-
-  // Cache-busting token so we can force <img> to reload even when path is unchanged
-  const [cacheBust, setCacheBust] = useState<number>(0);
+  const [imgLoading, setImgLoading] = useState(false); // start false; only true during actual fetch
+  const [fileErr, setFileErr] = useState<string>("");
 
   // DnD & upload state
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [fileErr, setFileErr] = useState<string>("");
 
-  // Validation constants
+  // Cache-buster so we can force browsers/CDN to refetch fresh bytes
+  const [cacheBuster, setCacheBuster] = useState<number>(0);
+
+  // Constants for validation
   const MAX_FILE_MB = 5;
   const BYTES_PER_MB = 1024 * 1024;
   const ALLOWED_EXT = new Set(["png", "jpg", "jpeg"]);
@@ -52,50 +52,65 @@ export default function BoardTile({
   // Sync local path with incoming prop
   useEffect(() => {
     setCurrentPath(heroPath);
-    // bump cache buster when parent sends a new path (even if it's same string we still refresh image via event below)
+    // if a brand-new image appears (was null before), also bump the cache buster
+    if (heroPath) setCacheBuster(Date.now());
   }, [heroPath]);
 
-  // Get signed URL for current hero image path
+  // Listen for explicit 'hero updated' events (backup/instant refresh)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { detail } = e as CustomEvent<{ id: string; path: string; ts?: number }>;
+      if (!detail || detail.id !== board.id) return;
+      // If the storage path changed, update it; even if it didn’t, a new ts forces a refetch
+      setCurrentPath(detail.path || board.hero_image_path || null);
+      setCacheBuster(detail.ts || Date.now());
+    };
+    window.addEventListener("board:hero-updated", handler as EventListener);
+    return () => window.removeEventListener("board:hero-updated", handler as EventListener);
+  }, [board.id, board.hero_image_path]);
+
+  // get signed URL for current hero image path
   useEffect(() => {
     let active = true;
     (async () => {
+      setFileErr("");
       setImgLoading(true);
-      if (!currentPath) {
-        setSignedUrl(null);
-        setImgLoading(false);
-        return;
+      try {
+        if (!currentPath) {
+          if (active) {
+            setSignedUrl(null);
+          }
+          return;
+        }
+        const { data, error } = await supabase.storage
+          .from("board-photos")
+          .createSignedUrl(currentPath, 60 * 60);
+
+        if (!active) return;
+
+        if (error || !data?.signedUrl) {
+          setSignedUrl(null);
+          setFileErr(error?.message || "Could not load image.");
+          return;
+        }
+
+        // Add cache-busting param so we always get the newest bytes
+        const sep = data.signedUrl.includes("?") ? "&" : "?";
+        const busted = `${data.signedUrl}${sep}ts=${cacheBuster || Date.now()}`;
+        setSignedUrl(busted);
+      } catch (err: any) {
+        if (active) {
+          setSignedUrl(null);
+          setFileErr(err?.message || "Could not load image.");
+        }
+      } finally {
+        if (active) setImgLoading(false);
       }
-      const { data, error } = await supabase.storage
-        .from("board-photos")
-        .createSignedUrl(currentPath, 60 * 60);
-      if (!active) return;
-      if (error || !data?.signedUrl) setSignedUrl(null);
-      else setSignedUrl(data.signedUrl);
-      // whenever we fetch a new signed url, bump cache buster so <img> definitely reloads
-      setCacheBust(Date.now());
-      setImgLoading(false);
     })();
     return () => {
       active = false;
     };
-  }, [currentPath]);
-
-  // Listen for "board:hero-updated" events so we refresh even if path didn't change
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const ce = e as CustomEvent<{ id: string; path?: string; ts?: number }>;
-      if (!ce?.detail) return;
-      if (ce.detail.id !== board.id) return;
-      if (ce.detail.path) setCurrentPath(ce.detail.path);
-      // force an immediate reload of the image
-      setCacheBust(Date.now());
-      setImgLoading(true);
-    };
-    window.addEventListener("board:hero-updated", handler as EventListener);
-    return () => {
-      window.removeEventListener("board:hero-updated", handler as EventListener);
-    };
-  }, [board.id]);
+  }, [currentPath, cacheBuster]);
 
   // Display strings
   const pixelsText = useMemo(() => {
@@ -110,13 +125,6 @@ export default function BoardTile({
     if (!w || !h) return "—";
     return `${w} × ${h}`;
   }, [board.width_display, board.height_display]);
-
-  // Build the final URL we feed into <img>, with a cache-busting param
-  const displayUrl = useMemo(() => {
-    if (!signedUrl) return null;
-    const sep = signedUrl.includes("?") ? "&" : "?";
-    return `${signedUrl}${sep}cb=${cacheBust}`;
-  }, [signedUrl, cacheBust]);
 
   // ---- Drag & Drop handlers ----
   const onDragOver: React.DragEventHandler<HTMLDivElement> = (e) => {
@@ -197,9 +205,16 @@ export default function BoardTile({
         .eq("id", board.id);
       if (updErr) throw updErr;
 
-      // refresh local path -> triggers signed URL refresh
+      // locally refresh immediately
       setCurrentPath(newPath);
-      setCacheBust(Date.now()); // force-evict any cached <img> immediately
+      setCacheBuster(Date.now());
+
+      // also broadcast so inventory / other tiles react
+      window.dispatchEvent(
+        new CustomEvent("board:hero-updated", {
+          detail: { id: board.id, path: newPath, ts: Date.now() },
+        })
+      );
     } catch (e: any) {
       setFileErr(e?.message || "Failed to update image.");
     } finally {
@@ -242,16 +257,13 @@ export default function BoardTile({
           {/* Image or placeholder */}
           {imgLoading ? (
             <div className="text-xs text-zinc-500">Loading…</div>
-          ) : displayUrl ? (
+          ) : signedUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              key={displayUrl} // ensure React swaps the node when URL (incl. cb) changes
-              src={displayUrl}
+              src={signedUrl}
               alt={board.board_name || "board"}
               className={"h-40 w-full object-cover " + (selectMode ? "cursor-pointer" : "")}
               loading="lazy"
-              onLoad={() => setImgLoading(false)}
-              onError={() => setImgLoading(false)}
             />
           ) : (
             <div className="text-xs text-zinc-400">
@@ -269,7 +281,7 @@ export default function BoardTile({
           )}
         </div>
 
-        {/* Hover action: Edit */}
+        {/* hover edit action */}
         {!selectMode && (
           <div className="absolute inset-x-0 top-0 p-2 flex justify-end opacity-0 group-hover:opacity-100 transition">
             <button
