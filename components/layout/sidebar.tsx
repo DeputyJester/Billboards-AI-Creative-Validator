@@ -1,3 +1,5 @@
+// FILE: components/sidebar.tsx  (keep your actual path if different)
+
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -9,6 +11,7 @@ import {
     Settings,
     ChevronLeft,
     ChevronRight,
+    FileText, // ← icon for Contracts
 } from "lucide-react";
 
 export type NavItem = {
@@ -19,10 +22,11 @@ export type NavItem = {
 };
 
 const DEFAULT_ITEMS: NavItem[] = [
-    { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, exact: true },
+    { label: "Contracts", href: "/contracts", icon: FileText },          // ← new, second item
     { label: "Inventory", href: "/inventory", icon: PanelsTopLeft },
-    { label: "Upload specs", href: "/upload-specs", icon: Upload },
     { label: "Campaigns", href: "/campaigns", icon: Megaphone },
+    { label: "Upload Specs", href: "/upload-specs", icon: Upload },      // ← capitalized “Specs”
     { label: "Settings", href: "/admin", icon: Settings },
 ];
 
@@ -38,12 +42,7 @@ export default function Sidebar({
     const router = useRouter();
 
     return (
-        <aside
-            className={
-                "shrink-0 transition-all duration-200 " +
-                (collapsed ? "w-16" : "w-60")
-            }
-        >
+        <aside className={"shrink-0 transition-all duration-200 " + (collapsed ? "w-16" : "w-60")}>
             <div className="sticky top-6">
                 {/* Brand */}
                 <div
@@ -60,13 +59,10 @@ export default function Sidebar({
                             className={collapsed ? "h-6 w-6" : "h-6 w-6"}
                             draggable={false}
                         />
-                        {!collapsed && (
-                            <span className="text-sm font-semibold tracking-wide">
-                                OOH Loop
-                            </span>
-                        )}
+                        {!collapsed && <span className="text-sm font-semibold tracking-wide">OOH Loop</span>}
                     </div>
-                    {!collapsed && (
+
+                    {!collapsed ? (
                         <button
                             onClick={onToggle}
                             className="rounded-md border border-neutral-200 px-2 py-1 text-neutral-600 hover:bg-neutral-50"
@@ -75,8 +71,7 @@ export default function Sidebar({
                         >
                             <ChevronLeft size={16} />
                         </button>
-                    )}
-                    {collapsed && (
+                    ) : (
                         <button
                             onClick={onToggle}
                             className="rounded-md border border-neutral-200 px-2 py-1 text-neutral-600 hover:bg-neutral-50"
@@ -91,9 +86,7 @@ export default function Sidebar({
                 {/* Nav */}
                 <nav className="space-y-1">
                     {items.map((it) => {
-                        const isActive = it.exact
-                            ? router.pathname === it.href
-                            : router.pathname.startsWith(it.href);
+                        const isActive = it.exact ? router.pathname === it.href : router.pathname.startsWith(it.href);
                         const Icon = it.icon;
                         return (
                             <Link
@@ -107,13 +100,8 @@ export default function Sidebar({
                                         : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50")
                                 }
                             >
-                                <Icon
-                                    size={18}
-                                    className={isActive ? "text-blue-700" : "text-neutral-600"}
-                                />
-                                {!collapsed && (
-                                    <span className="truncate">{it.label}</span>
-                                )}
+                                <Icon size={18} className={isActive ? "text-blue-700" : "text-neutral-600"} />
+                                {!collapsed && <span className="truncate">{it.label}</span>}
                             </Link>
                         );
                     })}

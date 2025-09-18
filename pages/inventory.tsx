@@ -10,6 +10,7 @@ import StartCampaignModal from "@/components/inventory/startcampaignmodal";
 import AddBoardModal from "@/components/inventory/addboardmodal";
 import BoardDetailsModal from "@/components/inventory/boarddetailsmodal"; // NEW
 import AppShell from "@/components/layout/appshell"; // <-- ADDED
+import ContractWizard from "@/components/contracts/contractwizard"; // CONTRACTS: NEW
 
 type BoardRow = {
     id: string;
@@ -79,6 +80,7 @@ export default function InventoryPage() {
     const [selectMode, setSelectMode] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [showStartCampaign, setShowStartCampaign] = useState(false);
+    const [showContractWizard, setShowContractWizard] = useState(false); // CONTRACTS: NEW
 
     const toggleSelected = (id: string) => {
         setSelected((prev) => {
@@ -286,6 +288,13 @@ export default function InventoryPage() {
                                     >
                                         Start campaign
                                     </button>
+                                    <button
+                                        onClick={() => setShowContractWizard(true)}
+                                        disabled={selectedCount === 0 || !orgId}
+                                        className="px-3 py-1.5 rounded-full border border-indigo-600 bg-indigo-600 text-white disabled:opacity-50 text-sm shadow"
+                                    >
+                                        Start contract
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -297,6 +306,19 @@ export default function InventoryPage() {
                     boardIds={[...selected]}
                     onClose={() => setShowStartCampaign(false)}
                 />
+
+                {orgId && (
+                    <ContractWizard
+                        open={showContractWizard}
+                        onClose={() => setShowContractWizard(false)}
+                        organizationId={orgId}
+                        preselectedBoardIds={[...selected]}
+                        onCreated={(id) => {
+                            setShowContractWizard(false);
+                            router.push(`/contracts/${id}`);
+                        }}
+                    />
+                )}
 
                 <AddBoardModal
                     open={addOpen}

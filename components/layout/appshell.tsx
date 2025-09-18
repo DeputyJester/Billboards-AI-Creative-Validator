@@ -1,4 +1,6 @@
-// components/layout/appshell.tsx
+// file: components/layout/appshell.tsx
+// purpose: app-wide shell with sidebar navigation
+
 "use client";
 
 import Link from "next/link";
@@ -14,6 +16,7 @@ import {
     Megaphone,
     Settings as SettingsIcon,
     LogOut,
+    FileText, // icon for "Contracts"
 } from "lucide-react";
 
 type NavItem = {
@@ -23,11 +26,13 @@ type NavItem = {
     match?: (pathname: string) => boolean;
 };
 
+// order: dashboard, contracts, inventory, campaigns, upload specs, settings
 const NAV_ITEMS: NavItem[] = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    { label: "Upload specs", href: "/upload-specs", icon: UploadCloud },
+    { label: "Contracts", href: "/contracts", icon: FileText }, // new
     { label: "Inventory", href: "/inventory", icon: Boxes },
     { label: "Campaigns", href: "/campaigns", icon: Megaphone },
+    { label: "Upload Specs", href: "/upload-specs", icon: UploadCloud },
     { label: "Settings", href: "/settings", icon: SettingsIcon },
 ];
 
@@ -51,7 +56,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         let unsub: (() => void) | undefined;
         (async () => {
-            const { data: { session } } = await supabase.auth.getSession();
+            const {
+                data: { session },
+            } = await supabase.auth.getSession();
             setEmail(session?.user?.email ?? null);
             setLoadingUser(false);
             const { data } = supabase.auth.onAuthStateChange((_event, sess) => {
@@ -62,11 +69,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         return () => unsub?.();
     }, []);
 
-    async function handleSignOut() {
-        await supabase.auth.signOut();
-        router.replace("/login");
-    }
-
     const pathname = router.pathname || "/";
     const logoTitle = useMemo(() => "OOH LOOP", []);
 
@@ -74,8 +76,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-h-screen bg-neutral-50">
             {/* Sidebar */}
             <aside
-                className={`sticky top-0 z-40 h-screen border-r border-neutral-200 bg-white transition-[width] duration-200
-        ${collapsed ? "w-16" : "w-64"} flex flex-col`}
+                className={`sticky top-0 z-40 h-screen border-r border-neutral-200 bg-white transition-[width] duration-200 ${collapsed ? "w-16" : "w-64"
+                    } flex flex-col`}
             >
                 {/* Top bar: hamburger + logo */}
                 <div className="flex items-center gap-2 px-3 py-3">
@@ -90,11 +92,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     {!collapsed && (
                         <Link href="/" className="ml-1 flex items-center gap-3 min-w-0">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                                src="/brand/loop-logo-dark.svg"
-                                alt="OOH LOOP"
-                                className="h-20 w-auto"
-                            />
+                            <img src="/brand/loop-logo-dark.svg" alt="OOH LOOP" className="h-20 w-auto" />
                             <span className="sr-only">{logoTitle}</span>
                         </Link>
                     )}
@@ -104,8 +102,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <nav className="flex-1 overflow-y-auto px-2 pb-2">
                     <ul className="space-y-1">
                         {NAV_ITEMS.map((item) => {
-                            const isActive =
-                                item.match?.(pathname) ?? pathname.startsWith(item.href);
+                            const isActive = item.match?.(pathname) ?? pathname.startsWith(item.href);
                             const Icon = item.icon;
                             return (
                                 <li key={item.href}>
@@ -113,9 +110,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                         href={item.href}
                                         className={[
                                             "group flex items-center rounded-xl px-3 py-2 text-sm transition",
-                                            isActive
-                                                ? "bg-blue-50 text-blue-700"
-                                                : "text-neutral-700 hover:bg-neutral-100",
+                                            isActive ? "bg-blue-50 text-blue-700" : "text-neutral-700 hover:bg-neutral-100",
                                         ].join(" ")}
                                     >
                                         <Icon
@@ -132,7 +127,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     </ul>
                 </nav>
 
-                {/* User block (pinned, spacious) */}
+                {/* User block */}
                 <div className="border-t border-neutral-200 p-3">
                     {collapsed ? (
                         <div className="flex flex-col items-center gap-2">
@@ -143,7 +138,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                 {(email ?? "U").slice(0, 1).toUpperCase()}
                             </div>
                             <button
-                                onClick={handleSignOut}
+                                onClick={async () => {
+                                    await supabase.auth.signOut();
+                                    router.replace("/login");
+                                }}
                                 className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-neutral-200 hover:bg-neutral-100"
                                 title="Sign out"
                             >
@@ -167,7 +165,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                             </div>
 
                             <button
-                                onClick={handleSignOut}
+                                onClick={async () => {
+                                    await supabase.auth.signOut();
+                                    router.replace("/login");
+                                }}
                                 className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-neutral-300 px-3 py-2 text-sm text-neutral-800 hover:bg-neutral-100"
                             >
                                 <LogOut className="h-4 w-4" />
