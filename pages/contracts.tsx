@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import supabase from "@/lib/supabaseclient"; // singleton client
 import ContractWizard from "@/components/contracts/contractwizard";
-import AppShell from "@/components/layout/appshell"; // 👈 added
+import AppShell from "@/components/layout/appshell";
 
 type Row = {
     id: string;
@@ -14,6 +14,7 @@ type Row = {
     subtotal: number | null;
     total: number | null;
     created_at: string;
+    documenso_status?: string | null; // 👈 added so we can reflect COMMITTED→completed
 };
 
 export default function contracts_page() {
@@ -30,7 +31,7 @@ export default function contracts_page() {
     async function load_list() {
         const { data, error } = await supabase
             .from("contracts")
-            .select("id,contract_number,name,status,subtotal,total,created_at")
+            .select("id,contract_number,name,status,subtotal,total,created_at,documenso_status") // 👈 include documenso_status
             .order("created_at", { ascending: false });
         if (error) {
             console.error(error);
@@ -84,7 +85,19 @@ export default function contracts_page() {
                 (payload) => {
                     const row = payload.new as any;
                     setRows((prev) =>
-                        prev.map((r) => (r.id === row.id ? { ...r, status: row.status } : r))
+                        prev.map((r) =>
+                            r.id === row.id
+                                ? {
+                                    ...r,
+                                    status: row.status,
+                                    // 👇 keep documenso_status in sync if it changes
+                                    documenso_status:
+                                        typeof row.documenso_status !== "undefined"
+                                            ? row.documenso_status
+                                            : r.documenso_status,
+                                }
+                                : r
+                        )
                     );
                 }
             )
@@ -102,6 +115,7 @@ export default function contracts_page() {
                             subtotal: row.subtotal,
                             total: row.total,
                             created_at: row.created_at,
+                            documenso_status: row.documenso_status ?? null, // 👈 include if present
                         },
                         ...prev,
                     ]);
@@ -162,20 +176,32 @@ export default function contracts_page() {
                             </tr>
                         </thead>
                         <tbody>
-                            {rows.map((r) => (
-                                <tr key={r.id} className="border-t">
-                                    <td className="px-3 py-2 font-medium">{r.contract_number ?? "—"}</td>
-                                    <td className="px-3 py-2">{r.name ?? "—"}</td>
-                                    <td className="px-3 py-2">{r.status}</td>
-                                    <td className="px-3 py-2 text-right">{fmtMoney(r.subtotal)}</td>
-                                    <td className="px-3 py-2 text-right">{fmtMoney(r.total)}</td>
-                                    <td className="px-3 py-2 text-right">
-                                        <a href={`/contracts/${r.id}`} className="text-indigo-600 hover:underline">
-                                            open
-                                        </a>
-                                    </td>
-                                </tr>
-                            ))}
+                            {rows.map((r) => {
+                                const isCompletedByDoc =
+                                    String(r.documenso_status || "").toUpperCase() === "COMPLETED";
+                                const displayStatus =
+                                    r.status === "sent" && isCompletedByDoc ? "completed" : r.status;
+
+                                return (
+                                    <tr key={r.id} className="border-t">
+                                        <td className="px-3 py-2 font-medium">
+                                            {r.contract_number ?? "—"}
+                                        </td>
+                                        <td className="px-3 py-2">{r.name ?? "—"}</td>
+                                        <td className="px-3 py-2">{displayStatus}</td>
+                                        <td className="px-3 py-2 text-right">{fmtMoney(r.subtotal)}</td>
+                                        <td className="px-3 py-2 text-right">{fmtMoney(r.total)}</td>
+                                        <td className="px-3 py-2 text-right">
+                                            <a
+                                                href={`/contracts/${r.id}`}
+                                                className="text-indigo-600 hover:underline"
+                                            >
+                                                open
+                                            </a>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -198,8 +224,8 @@ function fmtMoney(n?: number | null) {
     return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
 }
 
-// 👇 add this to render the sidebar for this page, using your existing _app.js pattern
+// render the sidebar for this page (matches your _app.js getLayout pattern)
 // @ts-ignore
-contracts_page.getLayout = function getLayout(page) {
+contracts_page.getLayout = function getLayout(page: React.ReactNode) {
     return <AppShell>{page}</AppShell>;
 };
