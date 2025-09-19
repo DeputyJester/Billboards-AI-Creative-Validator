@@ -1,11 +1,13 @@
 // page: /pages/contracts/[id].tsx
-// note: file stays all-lowercase per your convention; component stays PascalCase (React requirement)
+// note: component PascalCase; file path stays all-lowercase per your convention.
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { createClient } from "@supabase/supabase-js";
+import AppShell from "@/components/layout/appshell";
 
-// if you prefer your shared singleton, swap this for: import supabase from "@/lib/supabaseclient";
+// If you prefer your shared singleton, you can swap this for:
+// import supabase from "@/lib/supabaseclient";
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -338,3 +340,9 @@ function fmtDate(s?: string | null) {
     const d = new Date(s);
     return d.toLocaleDateString();
 }
+
+// render the sidebar for this page (uses your _app.js getLayout pattern)
+// @ts-ignore
+ContractDetailPage.getLayout = function getLayout(page: React.ReactNode) {
+    return <AppShell>{page}</AppShell>;
+};

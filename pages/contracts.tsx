@@ -14,7 +14,7 @@ type Row = {
     subtotal: number | null;
     total: number | null;
     created_at: string;
-    documenso_status?: string | null; // 👈 added so we can reflect COMMITTED→completed
+    documenso_status?: string | null; // used to reflect COMMITTED→completed in UI
 };
 
 export default function contracts_page() {
@@ -31,7 +31,7 @@ export default function contracts_page() {
     async function load_list() {
         const { data, error } = await supabase
             .from("contracts")
-            .select("id,contract_number,name,status,subtotal,total,created_at,documenso_status") // 👈 include documenso_status
+            .select("id,contract_number,name,status,subtotal,total,created_at,documenso_status")
             .order("created_at", { ascending: false });
         if (error) {
             console.error(error);
@@ -61,7 +61,7 @@ export default function contracts_page() {
         (async () => {
             setLoading(true);
 
-            // get org for the "new contract" button (adjust if your schema differs)
+            // org for the "new contract" button
             const { data: auth } = await supabase.auth.getUser();
             if (auth?.user?.id) {
                 const { data: membership } = await supabase
@@ -90,7 +90,6 @@ export default function contracts_page() {
                                 ? {
                                     ...r,
                                     status: row.status,
-                                    // 👇 keep documenso_status in sync if it changes
                                     documenso_status:
                                         typeof row.documenso_status !== "undefined"
                                             ? row.documenso_status
@@ -115,7 +114,7 @@ export default function contracts_page() {
                             subtotal: row.subtotal,
                             total: row.total,
                             created_at: row.created_at,
-                            documenso_status: row.documenso_status ?? null, // 👈 include if present
+                            documenso_status: row.documenso_status ?? null,
                         },
                         ...prev,
                     ]);
@@ -123,20 +122,28 @@ export default function contracts_page() {
             )
             .subscribe();
 
-        // gentle polling while on list (useful on localhost where webhooks can't reach)
-        const interval = setInterval(() => {
-            if (document.visibilityState === "visible") sync_and_refresh();
-        }, 15000);
-
-        const onVis = () => {
-            if (document.visibilityState === "visible") sync_and_refresh();
-        };
-        document.addEventListener("visibilitychange", onVis);
+        // dev-only gentle polling (prod relies on webhooks + realtime)
+        let interval: ReturnType<typeof setInterval> | null = null;
+        if (process.env.NODE_ENV !== "production") {
+            interval = setInterval(() => {
+                if (document.visibilityState === "visible") sync_and_refresh();
+            }, 15000);
+            const onVis = () => {
+                if (document.visibilityState === "visible") sync_and_refresh();
+            };
+            document.addEventListener("visibilitychange", onVis);
+            // cleanup for the visibility handler too
+            return () => {
+                mountedRef.current = false;
+                if (interval) clearInterval(interval);
+                document.removeEventListener("visibilitychange", onVis);
+                supabase.removeChannel(channel);
+            };
+        }
 
         return () => {
             mountedRef.current = false;
-            clearInterval(interval);
-            document.removeEventListener("visibilitychange", onVis);
+            if (interval) clearInterval(interval);
             supabase.removeChannel(channel);
         };
     }, []);
