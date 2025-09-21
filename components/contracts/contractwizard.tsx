@@ -29,6 +29,7 @@ type Board = {
     face_direction: string | null;
     geopath_id: string | null;
     hero_image_path: string | null;
+    organization_id?: string | null;
 };
 
 type Customer = {
@@ -155,52 +156,67 @@ export default function ContractWizard({
         })();
     }, []);
 
-    // boards
-    useEffect(() => {
-        if (!open) return;
-        let cancelled = false;
-        (async () => {
-            setLoadingBoards(true);
-            const { data, error } = await supabase
-                .from("boards")
-                .select(
-                    "id,board_name,location,city,state,spec_group,board_type,width_px,height_px,width_display,height_display,face_direction,geopath_id,hero_image_path,organization_id"
-                )
-                .eq("organization_id", organizationId)
-                .order("spec_group", { ascending: true })
-                .order("city", { ascending: true });
-            if (!cancelled) {
-                if (error) console.error(error);
-                const rows = (data ?? []) as Board[];
-                setBoards(rows);
-                setLoadingBoards(false);
+    // --- helper: fetch boards (always prefer freshest data) ---
+    async function fetchBoardsNow() {
+        setLoadingBoards(true);
+        const { data, error } = await supabase
+            .from("boards")
+            .select(
+                "id,board_name,location,city,state,spec_group,board_type,width_px,height_px,width_display,height_display,face_direction,geopath_id,hero_image_path,organization_id"
+            )
+            .eq("organization_id", organizationId)
+            .order("spec_group", { ascending: true })
+            .order("city", { ascending: true });
 
-                const nextSel: Record<string, boolean> = {};
-                (preselectedBoardIds ?? []).forEach((id) => (nextSel[id] = true));
-                setSelected(nextSel);
+        if (error) console.error(error);
+        const rows = (data ?? []) as Board[];
+        setBoards(rows);
+        setLoadingBoards(false);
 
-                const nextDraft: Record<string, ItemDraft> = {};
-                rows.forEach((b) => {
-                    if (!b.id) return;
-                    nextDraft[b.id] = {
+        // seed selection on first open if preselected were passed (only add, never remove)
+        if (preselectedBoardIds && preselectedBoardIds.length > 0) {
+            setSelected((prev) => {
+                const next = { ...prev };
+                preselectedBoardIds.forEach((id) => (next[id] = true));
+                return next;
+            });
+        }
+
+        // add default drafts only for boards that don't have one yet
+        setItemsDraft((prev) => {
+            const next = { ...prev };
+            rows.forEach((b) => {
+                if (!b.id) return;
+                if (!next[b.id]) {
+                    next[b.id] = {
                         boardId: b.id,
                         unitPrice: 2500,
                         qty: 1,
                         copyChanges: 0,
                         cycles: null,
-                        description: b.location || b.board_name || "Line Item",
+                        // prefer board_name then location
+                        description: b.board_name || b.location || "Line Item",
                         cycleStart: startDate || null,
                         cycleEnd: endDate || null,
                     };
-                });
-                setItemsDraft(nextDraft);
-            }
-        })();
-        return () => {
-            cancelled = true;
-        };
+                }
+            });
+            return next;
+        });
+    }
+
+    // fetch when modal opens / org changes
+    useEffect(() => {
+        if (!open || !organizationId) return;
+        fetchBoardsNow();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, organizationId]);
+
+    // fetch again whenever you land on the BOARDS step (keeps names fresh)
+    useEffect(() => {
+        if (open && step === Step.BOARDS) fetchBoardsNow();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, step]);
 
     // customers
     useEffect(() => {
@@ -285,7 +301,7 @@ export default function ContractWizard({
         [filteredBoards, selected]
     );
 
-    // ✅ SINGLE definition of creativeGroups
+    // creativeGroups (examples now prefer board_name)
     const creativeGroups = useMemo(() => {
         const map = new Map<string, { count: number; dims: string; examples: string[] }>();
         selectedBoards.forEach((b) => {
@@ -295,16 +311,16 @@ export default function ContractWizard({
                     ? `${b.height_display} × ${b.width_display}`
                     : `${b.width_px} × ${b.height_px}px`;
             const prev = map.get(key);
+            const example = (b.board_name || b.location || "").slice(0, 40);
             if (!prev) {
                 map.set(key, {
                     count: 1,
                     dims,
-                    examples: [(b.location || b.board_name || "").slice(0, 40)],
+                    examples: [example],
                 });
             } else {
                 prev.count += 1;
-                if (prev.examples.length < 2)
-                    prev.examples.push((b.location || b.board_name || "").slice(0, 40));
+                if (prev.examples.length < 2) prev.examples.push(example);
             }
         });
         return Array.from(map.entries()).map(([key, v]) => ({ key, ...v }));
@@ -352,7 +368,6 @@ export default function ContractWizard({
         return n;
     }
 
-    // define BEFORE use
     const createNewCustomer = async () => {
         if (!newCustomerName || !newCustomerEmail) {
             toast.error("Enter customer name & email");
@@ -402,7 +417,8 @@ export default function ContractWizard({
                         qty: it.qty ?? 1,
                         copyChanges: it.copyChanges ?? 0,
                         cycles: it.cycles ?? null,
-                        description: it.description || b.location || b.board_name || "Line Item",
+                        // prefer user-entered description, then board_name, then location
+                        description: it.description || b.board_name || b.location || "Line Item",
                         cycleStart: it.cycleStart ?? startDate,
                         cycleEnd: it.cycleEnd ?? endDate,
                     };
@@ -413,8 +429,18 @@ export default function ContractWizard({
                     email: staffSignerEmail || user?.email || null,
                 },
                 parties: [
-                    { role: "client", company: clientCompany || null, contact_name: clientSignerName || null, email: clientSignerEmail || null },
-                    { role: "staff", company: orgName || null, contact_name: staffSignerName || orgName || null, email: staffSignerEmail || user?.email || null },
+                    {
+                        role: "client",
+                        company: clientCompany || null,
+                        contact_name: clientSignerName || null,
+                        email: clientSignerEmail || null,
+                    },
+                    {
+                        role: "staff",
+                        company: orgName || null,
+                        contact_name: staffSignerName || orgName || null,
+                        email: staffSignerEmail || user?.email || null,
+                    },
                 ],
             };
 
@@ -460,7 +486,11 @@ export default function ContractWizard({
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center">
             <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-            <div role="dialog" aria-modal="true" className="relative bg-white w-full max-w-5xl rounded-2xl shadow-xl overflow-hidden">
+            <div
+                role="dialog"
+                aria-modal="true"
+                className="relative bg-white w-full max-w-5xl rounded-2xl shadow-xl overflow-hidden"
+            >
                 {/* Header */}
                 <div className="p-5 border-b">
                     <h2 className="text-xl font-semibold">Create Contract</h2>
@@ -480,7 +510,7 @@ export default function ContractWizard({
                 </div>
 
                 {/* Body */}
-                <div className="p-5 max-h-[70vh] overflow-auto">
+                <div className="p-5 max-h[toy]-[70vh] max-h-[70vh] overflow-auto">
                     {step === Step.DETAILS && (
                         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <Field label="Contract name">
@@ -529,7 +559,12 @@ export default function ContractWizard({
                                     ))}
                                 </select>
                                 <select className={clsInput} value={filterCity} onChange={(e) => setFilterCity(e.target.value)}>
-                                    {Array.from(new Set(["all", ...boards.map((b) => [b.city, b.state].filter(Boolean).join(", ")).filter(Boolean)])).map((c) => (
+                                    {Array.from(
+                                        new Set([
+                                            "all",
+                                            ...boards.map((b) => [b.city, b.state].filter(Boolean).join(", ")).filter(Boolean),
+                                        ])
+                                    ).map((c) => (
                                         <option key={c} value={c}>
                                             {c === "all" ? "All cities" : c}
                                         </option>
@@ -560,12 +595,15 @@ export default function ContractWizard({
                                                 <div className="p-3 space-y-2">
                                                     <div className="flex items-start justify-between gap-2">
                                                         <div>
-                                                            <div className="font-medium truncate">{b.location || b.board_name || "Board"}</div>
+                                                            {/* Prefer board_name for the card title */}
+                                                            <div className="font-medium truncate">{b.board_name || b.location || "Board"}</div>
                                                             <div className="text-xs text-gray-500">
                                                                 {[b.city, b.state].filter(Boolean).join(", ")} · {b.spec_group || b.board_type || "—"}
                                                             </div>
                                                             <div className="text-xs text-gray-500">
-                                                                {b.height_display && b.width_display ? `${b.height_display} × ${b.width_display}` : `${b.height_px}×${b.width_px}px`}
+                                                                {b.height_display && b.width_display
+                                                                    ? `${b.height_display} × ${b.width_display}`
+                                                                    : `${b.height_px}×${b.width_px}px`}
                                                             </div>
                                                             {b.geopath_id && <div className="text-[11px] text-gray-400">GeoPath: {b.geopath_id}</div>}
                                                         </div>
@@ -597,7 +635,9 @@ export default function ContractWizard({
                                                                 type="number"
                                                                 className={clsInput}
                                                                 value={it?.cycles ?? ""}
-                                                                onChange={(e) => updateDraft(b.id, { cycles: e.target.value === "" ? null : Number(e.target.value) })}
+                                                                onChange={(e) =>
+                                                                    updateDraft(b.id, { cycles: e.target.value === "" ? null : Number(e.target.value) })
+                                                                }
                                                             />
                                                         </div>
                                                     </div>
@@ -614,7 +654,12 @@ export default function ContractWizard({
                                                         </div>
                                                         <div>
                                                             <div className={clsLabel}>Desc</div>
-                                                            <input className={clsInput} value={it?.description ?? ""} onChange={(e) => updateDraft(b.id, { description: e.target.value })} />
+                                                            <input
+                                                                className={clsInput}
+                                                                value={it?.description ?? ""}
+                                                                onChange={(e) => updateDraft(b.id, { description: e.target.value })}
+                                                                placeholder={b.board_name || b.location || "Line Item"}
+                                                            />
                                                         </div>
                                                     </div>
                                                 </div>
@@ -630,7 +675,11 @@ export default function ContractWizard({
                         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-3">
                                 <h3 className="font-semibold">Customer</h3>
-                                <select className={clsInput + " w-full"} value={customerId ?? ""} onChange={(e) => setCustomerId(e.target.value || null)}>
+                                <select
+                                    className={clsInput + " w-full"}
+                                    value={customerId ?? ""}
+                                    onChange={(e) => setCustomerId(e.target.value || null)}
+                                >
                                     <option value="">Select…</option>
                                     {customers.map((c) => (
                                         <option key={c.id} value={c.id}>
@@ -641,8 +690,18 @@ export default function ContractWizard({
 
                                 <div className="text-xs text-gray-500">or quick-add</div>
                                 <div className="grid grid-cols-2 gap-2">
-                                    <input className={clsInput} placeholder="Customer name" value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} />
-                                    <input className={clsInput} placeholder="Customer email" value={newCustomerEmail} onChange={(e) => setNewCustomerEmail(e.target.value)} />
+                                    <input
+                                        className={clsInput}
+                                        placeholder="Customer name"
+                                        value={newCustomerName}
+                                        onChange={(e) => setNewCustomerName(e.target.value)}
+                                    />
+                                    <input
+                                        className={clsInput}
+                                        placeholder="Customer email"
+                                        value={newCustomerEmail}
+                                        onChange={(e) => setNewCustomerEmail(e.target.value)}
+                                    />
                                 </div>
                                 <button className={clsBtnSecondary} onClick={createNewCustomer}>
                                     Add customer
@@ -652,8 +711,18 @@ export default function ContractWizard({
                             <div className="space-y-3">
                                 <h3 className="font-semibold">Dates</h3>
                                 <div className="grid grid-cols-2 gap-2">
-                                    <input type="date" className={clsInput} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-                                    <input type="date" className={clsInput} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                                    <input
+                                        type="date"
+                                        className={clsInput}
+                                        value={startDate}
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                    />
+                                    <input
+                                        type="date"
+                                        className={clsInput}
+                                        value={endDate}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                    />
                                 </div>
 
                                 <div className="rounded-xl border p-3 bg-gray-50">
@@ -682,13 +751,28 @@ export default function ContractWizard({
                             <div className="space-y-2">
                                 <h3 className="font-semibold">Client signer</h3>
                                 <Field label="Client company (auto-filled from customer; editable)">
-                                    <input className={clsInput} placeholder="Company" value={clientCompany} onChange={(e) => setClientCompany(e.target.value)} />
+                                    <input
+                                        className={clsInput}
+                                        placeholder="Company"
+                                        value={clientCompany}
+                                        onChange={(e) => setClientCompany(e.target.value)}
+                                    />
                                 </Field>
                                 <Field label="Client name (auto-filled; editable)">
-                                    <input className={clsInput} placeholder="Client name" value={clientSignerName} onChange={(e) => setClientSignerName(e.target.value)} />
+                                    <input
+                                        className={clsInput}
+                                        placeholder="Client name"
+                                        value={clientSignerName}
+                                        onChange={(e) => setClientSignerName(e.target.value)}
+                                    />
                                 </Field>
                                 <Field label="Client email (auto-filled; editable)">
-                                    <input className={clsInput} placeholder="Client email" value={clientSignerEmail} onChange={(e) => setClientSignerEmail(e.target.value)} />
+                                    <input
+                                        className={clsInput}
+                                        placeholder="Client email"
+                                        value={clientSignerEmail}
+                                        onChange={(e) => setClientSignerEmail(e.target.value)}
+                                    />
                                 </Field>
                             </div>
                             <div className="space-y-2">
@@ -697,10 +781,20 @@ export default function ContractWizard({
                                     <input className={clsInput} value={orgName} readOnly />
                                 </Field>
                                 <Field label="Staff signer name">
-                                    <input className={clsInput} placeholder="Staff signer name" value={staffSignerName} onChange={(e) => setStaffSignerName(e.target.value)} />
+                                    <input
+                                        className={clsInput}
+                                        placeholder="Staff signer name"
+                                        value={staffSignerName}
+                                        onChange={(e) => setStaffSignerName(e.target.value)}
+                                    />
                                 </Field>
                                 <Field label="Staff email">
-                                    <input className={clsInput} placeholder="Staff email" value={staffSignerEmail} onChange={(e) => setStaffSignerEmail(e.target.value)} />
+                                    <input
+                                        className={clsInput}
+                                        placeholder="Staff email"
+                                        value={staffSignerEmail}
+                                        onChange={(e) => setStaffSignerEmail(e.target.value)}
+                                    />
                                 </Field>
                             </div>
                         </section>
@@ -722,11 +816,22 @@ export default function ContractWizard({
                             <div className="rounded-xl border p-4">
                                 <div className="text-xs text-gray-500 mb-2">Summary</div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                                    <div><span className="text-gray-500">Name:</span> {name}</div>
-                                    <div><span className="text-gray-500">Dates:</span> {fmtDate(startDate)} – {fmtDate(endDate)}</div>
-                                    <div><span className="text-gray-500">Customer:</span> {customers.find((c) => c.id === customerId)?.name || "—"}</div>
-                                    <div><span className="text-gray-500">Boards:</span> {selectedBoards.length}</div>
-                                    <div><span className="text-gray-500">Creatives needed:</span> {creativeGroups.length}</div>
+                                    <div>
+                                        <span className="text-gray-500">Name:</span> {name}
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500">Dates:</span> {fmtDate(startDate)} – {fmtDate(endDate)}
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500">Customer:</span>{" "}
+                                        {customers.find((c) => c.id === customerId)?.name || "—"}
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500">Boards:</span> {selectedBoards.length}
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500">Creatives needed:</span> {creativesNeeded}
+                                    </div>
                                 </div>
                             </div>
 
@@ -755,7 +860,7 @@ export default function ContractWizard({
                                                 const add = it?.copyChanges ?? 0;
                                                 return (
                                                     <tr key={b.id} className="border-t">
-                                                        <td className="px-3 py-2">{it?.description || b.location || b.board_name}</td>
+                                                        <td className="px-3 py-2">{it?.description || b.board_name || b.location}</td>
                                                         <td className="px-3 py-2">{[(b.city || ""), (b.state || "")].filter(Boolean).join(", ")}</td>
                                                         <td className="px-3 py-2">{b.spec_group || b.board_type || "—"}</td>
                                                         <td className="px-3 py-2 text-right">{it?.qty ?? 1}</td>
@@ -786,12 +891,18 @@ export default function ContractWizard({
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <button className={clsBtnSecondary} onClick={onClose}>Cancel</button>
+                        <button className={clsBtnSecondary} onClick={onClose}>
+                            Cancel
+                        </button>
                         {step > Step.DETAILS && (
-                            <button className={clsBtnSecondary} onClick={() => setStep((s) => (s - 1) as StepKey)}>Back</button>
+                            <button className={clsBtnSecondary} onClick={() => setStep((s) => (s - 1) as StepKey)}>
+                                Back
+                            </button>
                         )}
                         {step < Step.REVIEW && (
-                            <button className={clsBtn} onClick={() => setStep((s) => (s + 1) as StepKey)}>Next</button>
+                            <button className={clsBtn} onClick={() => setStep((s) => (s + 1) as StepKey)}>
+                                Next
+                            </button>
                         )}
                         {step === Step.REVIEW && (
                             <button className={clsBtn} onClick={onSubmit} disabled={submitting}>
